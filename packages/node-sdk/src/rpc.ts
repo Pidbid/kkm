@@ -119,6 +119,11 @@ export type SetSessionSwarmModeRpcInput =
 export interface ActivateSkillRpcInput extends SessionIdRpcInput {
   readonly name: string;
   readonly args?: string | undefined;
+  readonly additionalSkills?: readonly {
+    readonly name: string;
+    readonly args?: string | undefined;
+  }[];
+  readonly prompt?: PromptInput;
 }
 
 export interface ActivatePluginCommandRpcInput extends SessionIdRpcInput {
@@ -772,6 +777,8 @@ export abstract class SDKRpcClientBase {
       agentId: this.interactiveAgentId,
       name: input.name,
       args: input.args,
+      additionalSkills: input.additionalSkills,
+      prompt: input.prompt,
     });
   }
 

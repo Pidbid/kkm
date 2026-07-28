@@ -1,4 +1,8 @@
-import { buildSkillSlashCommands, isUserActivatableSkill } from '#/tui/commands/index';
+import {
+  buildSkillSlashCommands,
+  findInlineSkillNames,
+  isUserActivatableSkill,
+} from '#/tui/commands/index';
 import type { SkillSummary } from '@moonshot-ai/kimi-code-sdk';
 import { describe, expect, it } from 'vitest';
 
@@ -76,9 +80,17 @@ describe('skill slash commands', () => {
     ]);
     expect([...built.commandMap.entries()]).toEqual([
       ['mcp-config', 'mcp-config'],
+      ['skill:mcp-config', 'mcp-config'],
       ['update-config', 'update-config'],
+      ['skill:update-config', 'update-config'],
       ['skill:alpha', 'alpha'],
       ['skill:zeta', 'zeta'],
+    ]);
+    expect(built.inlineCommands.map((command) => command.name)).toEqual([
+      'skill:mcp-config',
+      'skill:update-config',
+      'skill:alpha',
+      'skill:zeta',
     ]);
   });
 
@@ -101,5 +113,21 @@ describe('skill slash commands', () => {
 
     expect(built.commands.map((command) => command.name)).toEqual(['outer.inner']);
     expect(built.commandMap.get('outer.inner')).toBe('outer.inner');
+  });
+
+  it('finds unique inline skill tokens in first-occurrence order', () => {
+    const built = buildSkillSlashCommands([
+      skill('review', 'prompt', { source: 'project' }),
+      skill('commit', 'flow', { source: 'user' }),
+      skill('mcp-config', 'inline', { source: 'builtin' }),
+    ]);
+
+    expect(
+      findInlineSkillNames(
+        'Use /skill:review, then /skill:mcp-config and /skill:review before /skill:commit.',
+        built.commandMap,
+      ),
+    ).toEqual(['review', 'mcp-config', 'commit']);
+    expect(findInlineSkillNames('Keep /skill:missing as text.', built.commandMap)).toEqual([]);
   });
 });

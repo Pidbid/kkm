@@ -19,6 +19,9 @@ export function promptMetadataTextFromPayload(payload: PromptPayload): string | 
 }
 
 export function promptMetadataTextFromSkill(payload: ActivateSkillPayload): string | undefined {
+  if (payload.prompt !== undefined) {
+    return promptMetadataTextFromPayload({ input: payload.prompt });
+  }
   const args = payload.args?.trim();
   return sanitizeAndTruncatePromptText(
     args === undefined || args.length === 0 ? `/${payload.name}` : `/${payload.name} ${args}`,

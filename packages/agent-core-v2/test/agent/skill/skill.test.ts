@@ -33,6 +33,15 @@ const COMMIT_SKILL = stubSkill('commit', {
   source: 'user',
 });
 
+const REVIEW_SKILL = stubSkill('review', {
+  description: 'review changes',
+  path: '/skills/review/SKILL.md',
+  dir: '/skills/review',
+  content: '# Review',
+  metadata: {},
+  source: 'project',
+});
+
 function stubSessionContext(sessionId = 'test-session'): ISessionContext {
   return {
     _serviceBrand: undefined,
@@ -82,6 +91,7 @@ describe('AgentSkillService', () => {
     });
     skills = new InMemorySkillCatalog();
     skills.register(COMMIT_SKILL);
+    skills.register(REVIEW_SKILL);
     const skillCatalog: ISessionSkillCatalog = {
       _serviceBrand: undefined,
       catalog: skills,
@@ -111,6 +121,41 @@ describe('AgentSkillService', () => {
   it('activate throws for an unknown skill', async () => {
     const svc = ix.get(IAgentSkillService);
     await expect(svc.activate({ name: 'missing' })).rejects.toThrow(/not found/i);
+  });
+
+  it('activates multiple skills with the original prompt in one message', async () => {
+    const svc = ix.get(IAgentSkillService);
+
+    await svc.activate({
+      name: 'review',
+      additionalSkills: [{ name: 'commit' }],
+      prompt: [{ type: 'text', text: 'Use /skill:review and /skill:commit.' }],
+    });
+
+    expect(prompted).toHaveLength(1);
+    expect(prompted[0]).toMatchObject({
+      role: 'user',
+      origin: { kind: 'user' },
+      content: [
+        { type: 'text', text: expect.stringContaining('name="review"') },
+        { type: 'text', text: expect.stringContaining('name="commit"') },
+        { type: 'text', text: 'Use /skill:review and /skill:commit.' },
+      ],
+    });
+  });
+
+  it('validates all skills before enqueueing a multi-skill prompt', async () => {
+    const svc = ix.get(IAgentSkillService);
+
+    await expect(
+      svc.activate({
+        name: 'review',
+        additionalSkills: [{ name: 'missing' }],
+        prompt: [{ type: 'text', text: 'Review and continue.' }],
+      }),
+    ).rejects.toThrow(/not found/i);
+
+    expect(prompted).toEqual([]);
   });
 
   it('activate waits for the catalog to be ready before resolving', async () => {

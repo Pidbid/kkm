@@ -257,6 +257,18 @@ describe('Session skills', () => {
     } satisfies Partial<KimiError>);
     expect(activateSkill).not.toHaveBeenCalled();
 
+    await session.promptWithSkills(
+      [{ name: ' review ' }, { name: ' commit ', args: ' staged ' }],
+      'Review and commit this change.',
+    );
+    expect(activateSkill).toHaveBeenCalledWith({
+      sessionId: session.id,
+      name: 'review',
+      args: undefined,
+      additionalSkills: [{ name: 'commit', args: 'staged' }],
+      prompt: [{ type: 'text', text: 'Review and commit this change.' }],
+    });
+
     await session.close();
     expect(closeSession).toHaveBeenCalledWith({ sessionId: session.id });
     expect(clearSessionHandlers).toHaveBeenCalledWith(session.id);
@@ -265,6 +277,10 @@ describe('Session skills', () => {
       code: 'session.closed',
     } satisfies Partial<KimiError>);
     await expect(session.activateSkill('review')).rejects.toMatchObject({
+      name: 'KimiError',
+      code: 'session.closed',
+    } satisfies Partial<KimiError>);
+    await expect(session.promptWithSkills([{ name: 'review' }], 'Review it.')).rejects.toMatchObject({
       name: 'KimiError',
       code: 'session.closed',
     } satisfies Partial<KimiError>);
@@ -365,6 +381,7 @@ describe('KimiHarness workspace skills', () => {
 
 async function writeSkill(workDir: string, name: string, lines: readonly string[]): Promise<void> {
   const dir = join(workDir, '.kimi-code', 'skills', name);
+  await mkdir(join(workDir, '.git'), { recursive: true });
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'SKILL.md'), lines.join('\n'));
 }

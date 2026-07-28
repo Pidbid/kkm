@@ -1361,6 +1361,32 @@ describe('OpenAILegacyChatProvider', () => {
   });
 
   describe('default reasoning protocol (no explicit reasoningKey)', () => {
+    it('omits an assistant message with only non-empty reasoning from request history', async () => {
+      const provider = createProvider({ model: 'deepseek-reasoner' });
+      const history: Message[] = [
+        { role: 'user', content: [{ type: 'text', text: 'Write a plan' }], toolCalls: [] },
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: 'think',
+              think: 'The plan is written. I should request approval.',
+            },
+          ],
+          toolCalls: [],
+        },
+        { role: 'user', content: [{ type: 'text', text: 'Continue' }], toolCalls: [] },
+      ];
+
+      const body = await captureRequestBody(provider, '', [], history);
+
+      expect(body['messages']).toEqual([
+        { role: 'user', content: 'Write a plan' },
+        { role: 'user', content: 'Continue' },
+      ]);
+      expect(body['reasoning_effort']).toBeUndefined();
+    });
+
     it('serializes ThinkPart back to reasoning_content even without reasoningKey', async () => {
       // The whole point of issue #69: a hand-written config.toml never sets
       // reasoningKey, but the round-trip must still work against DeepSeek-style
@@ -1404,9 +1430,16 @@ describe('OpenAILegacyChatProvider', () => {
       const body = await captureRequestBody(provider, '', [], history);
       const messages = body['messages'] as Record<string, unknown>[];
 
-      expect(messages[0]).toMatchObject({
+      expect(messages[0]).toEqual({
         role: 'assistant',
         reasoning_content: '',
+        tool_calls: [
+          {
+            type: 'function',
+            id: 'call_1',
+            function: { name: 'lookup', arguments: '{"q":"test"}' },
+          },
+        ],
       });
     });
 
@@ -1469,7 +1502,11 @@ describe('OpenAILegacyChatProvider', () => {
       ]);
     });
 
-    it('yields an empty ThinkPart from an explicitly empty streaming reasoning field', async () => {
+    it('skips empty streaming reasoning fields instead of yielding empty ThinkParts', async () => {
+      // Some OpenAI-compatible gateways pad every content-phase chunk with an
+      // empty reasoning field. Yielding empty ThinkParts would interleave them
+      // between text deltas and defeat sequential merging (symptom downstream:
+      // one text part per token).
       const provider = new OpenAILegacyChatProvider({
         model: 'deepseek-reasoner',
         apiKey: 'test-key',
@@ -1488,7 +1525,126 @@ describe('OpenAILegacyChatProvider', () => {
       const parts: StreamedMessagePart[] = [];
       for await (const part of stream) parts.push(part);
 
-      expect(parts).toEqual([{ type: 'think', think: '' }]);
+      expect(parts).toEqual([]);
+    });
+
+    it('does not interleave empty ThinkParts between text deltas when chunks pad empty reasoning', async () => {
+      const provider = new OpenAILegacyChatProvider({
+        model: 'some-reasoning-model',
+        apiKey: 'test-key',
+        stream: true,
+      });
+
+      async function* mockedStream(): AsyncIterable<Record<string, unknown>> {
+        yield {
+          id: 'c1',
+          choices: [{ index: 0, delta: { content: '', reasoning_content: 'think 1' } }],
+        };
+        yield {
+          id: 'c1',
+          choices: [{ index: 0, delta: { content: 'Hello', reasoning_content: '' } }],
+        };
+        yield {
+          id: 'c1',
+          choices: [{ index: 0, delta: { content: ' world', reasoning_content: '' } }],
+        };
+        yield { id: 'c1', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] };
+      }
+
+      (provider as any)._client.chat.completions.create = vi
+        .fn()
+        .mockResolvedValue(mockedStream());
+
+      const stream = await provider.generate('', [], []);
+      const parts: StreamedMessagePart[] = [];
+      for await (const part of stream) parts.push(part);
+
+      expect(parts).toEqual([
+        { type: 'think', think: 'think 1' },
+        { type: 'text', text: 'Hello' },
+        { type: 'text', text: ' world' },
+      ]);
+    });
+
+    it('assembles one merged text part through generate() when chunks pad empty reasoning', async () => {
+      // End-to-end invariant behind the per-token-line-breaks bug: after the
+      // stream is drained and merged, the reply must be a single text part.
+      const provider = new OpenAILegacyChatProvider({
+        model: 'some-reasoning-model',
+        apiKey: 'test-key',
+        stream: true,
+      });
+
+      async function* mockedStream(): AsyncIterable<Record<string, unknown>> {
+        yield {
+          id: 'c1',
+          choices: [{ index: 0, delta: { content: '', reasoning_content: 'think 1' } }],
+        };
+        yield {
+          id: 'c1',
+          choices: [{ index: 0, delta: { content: 'Hello', reasoning_content: '' } }],
+        };
+        yield {
+          id: 'c1',
+          choices: [{ index: 0, delta: { content: ' world', reasoning_content: '' } }],
+        };
+        yield { id: 'c1', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] };
+      }
+
+      (provider as any)._client.chat.completions.create = vi
+        .fn()
+        .mockResolvedValue(mockedStream());
+
+      const result = await generate(
+        provider,
+        '',
+        [],
+        [{ role: 'user', content: [{ type: 'text', text: 'hi' }], toolCalls: [] }],
+      );
+
+      expect(result.message.content).toEqual([
+        { type: 'think', think: 'think 1' },
+        { type: 'text', text: 'Hello world' },
+      ]);
+    });
+
+    it('preserves the empty reasoning marker on streaming tool-call chunks', async () => {
+      // Reasoning endpoints may require the reasoning field to be replayed on
+      // tool-call continuation; the empty marker must survive so the outbound
+      // message keeps carrying the reasoning field.
+      const provider = new OpenAILegacyChatProvider({
+        model: 'some-reasoning-model',
+        apiKey: 'test-key',
+        stream: true,
+      });
+
+      async function* mockedStream(): AsyncIterable<Record<string, unknown>> {
+        yield {
+          id: 'c1',
+          choices: [
+            {
+              index: 0,
+              delta: {
+                reasoning_content: '',
+                tool_calls: [
+                  { id: 'call_1', index: 0, function: { name: 'foo', arguments: '{}' } },
+                ],
+              },
+            },
+          ],
+        };
+        yield { id: 'c1', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] };
+      }
+
+      (provider as any)._client.chat.completions.create = vi
+        .fn()
+        .mockResolvedValue(mockedStream());
+
+      const stream = await provider.generate('', [], []);
+      const parts: StreamedMessagePart[] = [];
+      for await (const part of stream) parts.push(part);
+
+      expect(parts.filter((p) => p.type === 'think')).toEqual([{ type: 'think', think: '' }]);
     });
 
     it('treats blank reasoning_key as unset so defaults still apply', async () => {
@@ -1838,7 +1994,7 @@ describe('OpenAILegacyChatProvider — non-stream response parsing', () => {
     ]);
   });
 
-  it('yields an empty ThinkPart when the non-stream reasoning field is explicitly empty', async () => {
+  it('skips an explicitly empty non-stream reasoning field', async () => {
     const provider = new OpenAILegacyChatProvider({
       model: 'deepseek-reasoner',
       apiKey: 'test-key',
@@ -1855,7 +2011,33 @@ describe('OpenAILegacyChatProvider — non-stream response parsing', () => {
       }),
     );
 
-    expect(parts).toEqual([{ type: 'think', think: '' }]);
+    expect(parts).toEqual([]);
+  });
+
+  it('preserves the empty reasoning marker on a non-stream tool-call response', async () => {
+    // Reasoning endpoints may require the reasoning field to be replayed on
+    // tool-call continuation; the empty marker must survive so the outbound
+    // message keeps carrying the reasoning field.
+    const provider = new OpenAILegacyChatProvider({
+      model: 'deepseek-reasoner',
+      apiKey: 'test-key',
+      stream: false,
+      reasoningKey: 'reasoning_content',
+    });
+
+    const parts = await collectFromMockedResponse(
+      provider,
+      makeNonStreamResponse({
+        role: 'assistant',
+        content: null,
+        reasoning_content: '',
+        tool_calls: [
+          { id: 'call_1', type: 'function', function: { name: 'foo', arguments: '{}' } },
+        ],
+      }),
+    );
+
+    expect(parts.filter((p) => p.type === 'think')).toEqual([{ type: 'think', think: '' }]);
   });
 
   it('non-stream response yields ToolCall parts when tool_calls present', async () => {

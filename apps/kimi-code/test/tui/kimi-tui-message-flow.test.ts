@@ -96,6 +96,7 @@ function stripSgr(text: string): string {
 
 interface MessageDriver {
   state: TUIState;
+  skillCommandMap: Map<string, string>;
   streamingUI: StreamingUIController;
   sessionEventHandler: {
     startSubscription(): void;
@@ -232,6 +233,7 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     reloadPlugins: vi.fn(async () => ({ added: [], removed: [], errors: [] })),
     reloadSession: vi.fn(async () => ({})),
     activateSkill: vi.fn(async () => {}),
+    promptWithSkills: vi.fn(async () => {}),
     getPluginInfo: vi.fn(async (id: string) => ({
       id,
       displayName: id,
@@ -2100,6 +2102,40 @@ command = "vim"
 
     expect(session.activateSkill).not.toHaveBeenCalled();
     expect(stripSgr(renderTranscript(driver))).toContain('Failed to prepare media attachment');
+  });
+
+  it('submits inline skills once in first-occurrence order with the original prompt', async () => {
+    const session = makeSession();
+    const { driver } = await makeDriver(session);
+    driver.state.appState.model = 'k2';
+    driver.skillCommandMap.set('skill:review', 'review');
+    driver.skillCommandMap.set('skill:commit', 'commit');
+
+    driver.handleUserInput(
+      'Use /skill:review, fix the issue, then /skill:review and /skill:commit.',
+    );
+
+    expect(session.promptWithSkills).toHaveBeenCalledWith(
+      [{ name: 'review' }, { name: 'commit' }],
+      'Use /skill:review, fix the issue, then /skill:review and /skill:commit.',
+    );
+    expect(session.prompt).not.toHaveBeenCalled();
+  });
+
+  it('submits multiple skills as one prompt when the first skill starts the message', async () => {
+    const session = makeSession();
+    const { driver } = await makeDriver(session);
+    driver.state.appState.model = 'k2';
+    driver.skillCommandMap.set('skill:review', 'review');
+    driver.skillCommandMap.set('skill:commit', 'commit');
+
+    driver.handleUserInput('/skill:review check this, then /skill:commit');
+
+    expect(session.promptWithSkills).toHaveBeenCalledWith(
+      [{ name: 'review' }, { name: 'commit' }],
+      '/skill:review check this, then /skill:commit',
+    );
+    expect(session.activateSkill).not.toHaveBeenCalled();
   });
 
   it('shows an error instead of throwing when plugin command media materialization fails', async () => {

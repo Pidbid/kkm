@@ -45,6 +45,7 @@ export class FileMentionProvider implements AutocompleteProvider {
     private readonly fdPath: string | null,
     additionalDirs: readonly string[] = [],
     private readonly getInputMode: () => 'prompt' | 'bash' = () => 'prompt',
+    private readonly inlineSkillCommands: readonly SlashAutocompleteCommand[] = [],
   ) {
     this.additionalDirs = additionalDirs.map((dir) => normalizePath(resolve(workDir, dir)));
     // Build an expanded list that includes alias entries so that
@@ -97,6 +98,22 @@ export class FileMentionProvider implements AutocompleteProvider {
           atPrefix,
           options.signal,
         );
+      }
+    }
+
+    if (
+      this.getInputMode() !== 'bash' &&
+      options.force !== true &&
+      this.inlineSkillCommands.length > 0
+    ) {
+      const inlineSkillPrefix = extractInlineSkillPrefix(lines, cursorLine, cursorCol);
+      if (inlineSkillPrefix !== null) {
+        const slashArgumentSuggestions = await getSlashArgumentSuggestions(
+          this.slashCommands,
+          textBeforeCursor,
+        );
+        if (slashArgumentSuggestions !== null) return slashArgumentSuggestions;
+        return getInlineSkillSuggestions(this.inlineSkillCommands, inlineSkillPrefix);
       }
     }
 
@@ -206,6 +223,12 @@ export class FileMentionProvider implements AutocompleteProvider {
     item: AutocompleteItem,
     prefix: string,
   ): { lines: string[]; cursorLine: number; cursorCol: number } {
+    if (
+      this.getInputMode() !== 'bash' &&
+      isInlineSkillCompletion(lines, cursorLine, cursorCol, prefix, this.inlineSkillCommands)
+    ) {
+      return applyInlineSkillCompletion(lines, cursorLine, cursorCol, item, prefix);
+    }
     // In bash mode a leading `/` is a path, but pi-tui's applyCompletion
     // mistakes it for a slash command (prefix starts with `/`, nothing before
     // it, no second `/`) and prepends another `/`, producing e.g.
@@ -217,6 +240,85 @@ export class FileMentionProvider implements AutocompleteProvider {
     }
     return this.inner.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
   }
+}
+
+export function extractInlineSkillPrefix(
+  lines: readonly string[],
+  cursorLine: number,
+  cursorCol: number,
+): string | null {
+  const textBeforeCursor = (lines[cursorLine] ?? '').slice(0, cursorCol);
+  const match = textBeforeCursor.match(/(?:^|[\t ])(\/[^\t ]*)$/);
+  if (match === null) return null;
+  const prefix = match[1]!;
+  const prefixStart = textBeforeCursor.length - prefix.length;
+  if (cursorLine === 0 && prefixStart === 0) return null;
+  return prefix;
+}
+
+function getInlineSkillSuggestions(
+  commands: readonly SlashAutocompleteCommand[],
+  prefix: string,
+): AutocompleteSuggestions | null {
+  const query = prefix.slice(1);
+  const tokens = query
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+  const matches = commands
+    .map((command) => ({ command, score: scoreTokens(tokens, command.name) }))
+    .filter(
+      (
+        match,
+      ): match is {
+        command: SlashAutocompleteCommand;
+        score: number;
+      } => match.score !== null,
+    )
+    .toSorted((a, b) => a.score - b.score);
+  if (matches.length === 0) return null;
+  return {
+    prefix,
+    items: matches.map(({ command }) => ({
+      value: command.name,
+      label: command.name,
+      description: formatSlashCommandDescription(command),
+    })),
+  };
+}
+
+function isInlineSkillCompletion(
+  lines: readonly string[],
+  cursorLine: number,
+  cursorCol: number,
+  prefix: string,
+  commands: readonly SlashAutocompleteCommand[],
+): boolean {
+  if (!prefix.startsWith('/')) return false;
+  const inlinePrefix = extractInlineSkillPrefix(lines, cursorLine, cursorCol);
+  if (inlinePrefix !== prefix) return false;
+  return commands.length > 0;
+}
+
+function applyInlineSkillCompletion(
+  lines: string[],
+  cursorLine: number,
+  cursorCol: number,
+  item: AutocompleteItem,
+  prefix: string,
+): { lines: string[]; cursorLine: number; cursorCol: number } {
+  const currentLine = lines[cursorLine] ?? '';
+  const beforePrefix = currentLine.slice(0, cursorCol - prefix.length);
+  const replacement = `/${item.value} `;
+  const afterCursor = currentLine.slice(cursorCol);
+  const newLines = [...lines];
+  newLines[cursorLine] =
+    beforePrefix + replacement + (afterCursor.startsWith(' ') ? afterCursor.slice(1) : afterCursor);
+  return {
+    lines: newLines,
+    cursorLine,
+    cursorCol: beforePrefix.length + replacement.length,
+  };
 }
 
 export function extractAtPrefix(text: string): string | null {

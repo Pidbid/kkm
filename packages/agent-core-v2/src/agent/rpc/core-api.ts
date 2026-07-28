@@ -207,6 +207,13 @@ export interface SkillSummary {
 export interface ActivateSkillPayload {
   readonly name: string;
   readonly args?: string | undefined;
+  readonly additionalSkills?: readonly SkillActivationRequest[];
+  readonly prompt?: readonly ContentPart[];
+}
+
+export interface SkillActivationRequest {
+  readonly name: string;
+  readonly args?: string | undefined;
 }
 
 export interface ActivatePluginCommandPayload {

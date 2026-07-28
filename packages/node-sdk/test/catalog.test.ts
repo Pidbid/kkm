@@ -7,11 +7,19 @@ import {
   catalogProviderModels,
   CatalogFetchError,
   fetchCatalog,
+  loadBuiltInCatalog,
   type CatalogModel,
 } from '../src/catalog';
 
 function catalogResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function rawCatalogResponse(body: string, status = 200): Response {
+  return new Response(body, {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
@@ -55,6 +63,13 @@ describe('fetchCatalog', () => {
     ).rejects.toThrow(/Unexpected catalog response/);
   });
 
+  it('throws on invalid JSON', async () => {
+    const fetchMock = vi.fn(async () => rawCatalogResponse('{'));
+    await expect(
+      fetchCatalog('https://x', { fetchImpl: fetchMock as unknown as typeof fetch }),
+    ).rejects.toThrow(/Unexpected catalog response/);
+  });
+
   it('sends the given User-Agent, and none by default', async () => {
     const fetchMock = vi.fn(async () => catalogResponse({}));
 
@@ -76,6 +91,13 @@ describe('fetchCatalog', () => {
     });
     const withoutUa = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect((withoutUa[1].headers as Record<string, string>)['User-Agent']).toBeUndefined();
+  });
+});
+
+describe('loadBuiltInCatalog', () => {
+  it('returns undefined for invalid or non-object payloads', () => {
+    expect(loadBuiltInCatalog('{')).toBeUndefined();
+    expect(loadBuiltInCatalog('[1, 2]')).toBeUndefined();
   });
 });
 
