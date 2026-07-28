@@ -1,19 +1,20 @@
 {
   "name": "@moonshot-ai/kimi-code",
-  "version": "0.29.2",
-  "description": "The Starting Point for Next-Gen Agents",
+  "version": "0.29.2-kkm.1",
+  "description": "KKM, a portable Kimi Code fork with curated upstream fixes",
   "license": "MIT",
   "author": "Moonshot AI",
-  "homepage": "https://github.com/MoonshotAI/kimi-code/tree/main/apps/kimi-code#readme",
+  "homepage": "https://github.com/Pidbid/kkm#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MoonshotAI/kimi-code.git",
+    "url": "git+https://github.com/Pidbid/kkm.git",
     "directory": "apps/kimi-code"
   },
   "bugs": {
-    "url": "https://github.com/MoonshotAI/kimi-code/issues"
+    "url": "https://github.com/Pidbid/kkm/issues"
   },
   "keywords": [
+    "kkm",
     "kimi",
     "kimi-code",
     "cli",
@@ -23,6 +24,7 @@
     "tui"
   ],
   "bin": {
+    "kkm": "dist/main.mjs",
     "kimi": "dist/main.mjs"
   },
   "files": [

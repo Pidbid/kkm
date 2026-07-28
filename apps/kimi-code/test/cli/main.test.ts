@@ -222,7 +222,7 @@ describe('main entry command handling', () => {
     mocks.flushDiagnosticLogs.mockResolvedValue(undefined);
   });
 
-  it('runs update preflight before starting the shell', async () => {
+  it('starts the KKM shell without running the upstream update preflight', async () => {
     const opts = defaultOpts();
     mocks.validateOptions.mockReturnValue({ options: opts, uiMode: 'shell' });
     mocks.runUpdatePreflight.mockResolvedValue('continue');
@@ -232,10 +232,7 @@ describe('main entry command handling', () => {
 
     expect(exitCode).toBeNull();
     expect(validateOptions).toHaveBeenCalledWith(opts);
-    expect(runUpdatePreflight).toHaveBeenCalledWith('0.0.1-alpha.2', { track: expect.any(Function) });
-    expect(mocks.runUpdatePreflight.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.runShell.mock.invocationCallOrder[0]!,
-    );
+    expect(runUpdatePreflight).not.toHaveBeenCalled();
     expect(runShell).toHaveBeenCalledWith(opts, '0.0.1-alpha.2');
   });
 
@@ -251,10 +248,7 @@ describe('main entry command handling', () => {
     const exitCode = await runHandleMainCommand(opts);
 
     expect(exitCode).toBeNull();
-    expect(runUpdatePreflight).toHaveBeenCalledWith('0.0.1-alpha.2', {
-      track: expect.any(Function),
-      isTTY: false,
-    });
+    expect(runUpdatePreflight).not.toHaveBeenCalled();
     expect(runPrompt).toHaveBeenCalledWith(opts, '0.0.1-alpha.2');
     expect(runShell).not.toHaveBeenCalled();
   });
@@ -334,7 +328,7 @@ describe('main entry command handling', () => {
     }
   });
 
-  it('keeps shell mode update preflight interactive by default', async () => {
+  it('keeps the upstream update preflight disabled in shell mode', async () => {
     const opts = defaultOpts();
     mocks.validateOptions.mockReturnValue({ options: opts, uiMode: 'shell' });
     mocks.runUpdatePreflight.mockResolvedValue('continue');
@@ -343,9 +337,7 @@ describe('main entry command handling', () => {
     const exitCode = await runHandleMainCommand(opts);
 
     expect(exitCode).toBeNull();
-    expect(runUpdatePreflight).toHaveBeenCalledWith('0.0.1-alpha.2', {
-      track: expect.any(Function),
-    });
+    expect(runUpdatePreflight).not.toHaveBeenCalled();
     expect(runShell).toHaveBeenCalledWith(opts, '0.0.1-alpha.2');
   });
 
@@ -365,13 +357,13 @@ describe('main entry command handling', () => {
       process.title = 'kimi-test-runner';
       main();
 
-      expect(process.title).toBe('kimi-code');
+      expect(process.title).toBe('kkm');
     } finally {
       process.title = originalTitle;
     }
   });
 
-  it('exits early when update preflight requests process exit', async () => {
+  it('ignores an upstream preflight result for KKM', async () => {
     const opts = defaultOpts();
     mocks.validateOptions.mockReturnValue({ options: opts, uiMode: 'shell' });
     mocks.runUpdatePreflight.mockResolvedValue('exit');
@@ -379,46 +371,22 @@ describe('main entry command handling', () => {
 
     const exitCode = await runHandleMainCommand(opts);
 
-    expect(exitCode).toBe(0);
-    expect(runShell).not.toHaveBeenCalled();
+    expect(exitCode).toBeNull();
+    expect(runUpdatePreflight).not.toHaveBeenCalled();
+    expect(runShell).toHaveBeenCalledWith(opts, '0.0.1-alpha.2');
   });
 
-  it('initializes and flushes telemetry around the upgrade command', async () => {
+  it('directs the KKM upgrade command to this fork releases', async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const exitCode = await runHandleUpgradeCommand();
 
     expect(exitCode).toBe(0);
-    expect(mocks.createCliTelemetryBootstrap).toHaveBeenCalledTimes(1);
-    expect(mocks.createKimiHarness).toHaveBeenCalledWith(expect.objectContaining({
-      homeDir: '/tmp/kimi-home',
-      telemetry: {
-        track: mocks.track,
-        withContext: mocks.withTelemetryContext,
-        setContext: mocks.setTelemetryContext,
-      },
-    }));
-    expect(mocks.harness.ensureConfigFile).toHaveBeenCalledTimes(1);
-    expect(mocks.initializeCliTelemetry).toHaveBeenCalledWith(expect.objectContaining({
-      harness: expect.objectContaining({
-        homeDir: '/tmp/kimi-home',
-      }),
-      bootstrap: {
-        homeDir: '/tmp/kimi-home',
-        deviceId: 'device-id',
-        firstLaunch: false,
-      },
-      config: {
-        defaultModel: 'kimi-k2',
-        telemetry: true,
-      },
-      version: '0.0.1-alpha.2',
-      uiMode: 'shell',
-    }));
-    expect(mocks.handleUpgrade).toHaveBeenCalledWith('0.0.1-alpha.2', {
-      track: mocks.track,
-      logger: mocks.log,
-    });
-    expect(mocks.shutdownTelemetry).toHaveBeenCalledWith({ timeoutMs: 3000 });
-    expect(mocks.harness.close).toHaveBeenCalledTimes(1);
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      'Download the latest KKM release: https://github.com/Pidbid/kkm/releases/latest\n',
+    );
+    expect(mocks.createCliTelemetryBootstrap).not.toHaveBeenCalled();
+    expect(mocks.handleUpgrade).not.toHaveBeenCalled();
+    stdoutSpy.mockRestore();
   });
 
   it('formats Kimi startup errors with structured fields', () => {

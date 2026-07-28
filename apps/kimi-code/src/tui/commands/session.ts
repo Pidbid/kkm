@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import type { Session } from '@moonshot-ai/kimi-code-sdk';
 
 import { detectInstallSource } from '#/cli/update/source';
+import { CLI_COMMAND_NAME } from '#/constant/app';
 import { detectShellEnvironment } from '#/utils/process/shell-env';
 import { toTerminalHyperlink } from '#/utils/terminal-hyperlink';
 import { LLM_NOT_SET_MESSAGE, NO_ACTIVE_SESSION_MESSAGE } from '../constant/kimi-tui';
@@ -70,7 +71,7 @@ export async function handleForkCommand(host: SlashCommandHost, args: string): P
   try {
     await host.switchToSession(
       forked,
-      `Session forked (${forked.id}). To return to the original session: kimi -r ${session.id}`,
+      `Session forked (${forked.id}). To return to the original session: ${CLI_COMMAND_NAME} -r ${session.id}`,
     );
   } catch (error) {
     const msg = formatErrorMessage(error);
