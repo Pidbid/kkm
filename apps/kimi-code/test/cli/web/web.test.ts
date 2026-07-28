@@ -137,9 +137,9 @@ describe('kimi web', () => {
       exitSpy.mockRestore();
 
       expect(exitCalls).toEqual([1]);
-      expect(stderr).toContain('`kimi server` has been deprecated and no longer works.');
-      expect(stderr).toContain('kimi web');
-      expect(stderr).toContain('kimi server kill');
+      expect(stderr).toContain('`kkm server` has been deprecated and no longer works.');
+      expect(stderr).toContain('kkm web');
+      expect(stderr).toContain('kkm server kill');
       expect(stderr).toContain('0.28.0');
       expect(stderr).toContain('next major version');
     }

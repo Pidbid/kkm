@@ -35,6 +35,7 @@ import {
 import type { Command } from 'commander';
 
 import { createKimiCodeHostIdentity, createKimiCodeUserAgent } from '#/cli/version';
+import { CLI_COMMAND_NAME } from '#/constant/app';
 
 interface WritableLike {
   write(chunk: string): boolean;
@@ -356,7 +357,7 @@ export async function handleCatalogAdd(
 
   if (opts.defaultModel !== undefined && !models.some((m) => m.id === opts.defaultModel)) {
     deps.stderr.write(
-      `Model "${opts.defaultModel}" is not in provider "${providerId}". Run "kimi provider catalog list ${providerId}" to see available ids.\n`,
+      `Model "${opts.defaultModel}" is not in provider "${providerId}". Run "${CLI_COMMAND_NAME} provider catalog list ${providerId}" to see available ids.\n`,
     );
     deps.exit(1);
   }

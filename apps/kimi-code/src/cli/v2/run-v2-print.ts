@@ -17,6 +17,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
+import { Writable } from 'node:stream';
 
 import {
   IAgentGoalService,
@@ -61,6 +62,7 @@ import { createKimiDefaultHeaders, createKimiDeviceId } from '@moonshot-ai/kimi-
 import { resolve } from 'pathe';
 
 import {
+  CLI_COMMAND_NAME,
   CLI_SHUTDOWN_TIMEOUT_MS,
   CLI_USER_AGENT_PRODUCT,
   PROMPT_CLEANUP_TIMEOUT_MS,
@@ -73,6 +75,7 @@ import {
   parseHeadlessGoalCreate,
   type HeadlessGoalCreate,
 } from '../goal-prompt';
+import { drainStdio } from '../headless-exit';
 import {
   type PromptRunIO,
   configuredModel,
@@ -112,6 +115,9 @@ export async function runV2Print(
   const stdout = io.stdout ?? process.stdout;
   const stderr = io.stderr ?? process.stderr;
   const promptProcess = io.process ?? process;
+  const streams = [stdout, stderr].filter(
+    (stream): stream is Writable => stream instanceof Writable,
+  );
   const outputFormat = resolveOutputFormat(opts);
   const workDir = process.cwd();
 
@@ -164,10 +170,10 @@ export async function runV2Print(
   let restorePermission = async (): Promise<void> => {};
   let removeTerminationCleanup: (() => void) | undefined;
   let cleanupPromise: Promise<void> | undefined;
+  let outputDrainPromise: Promise<void> | undefined;
   let telemetryService: ITelemetryService | undefined;
   const cleanup = async (): Promise<void> => {
     const pending = (cleanupPromise ??= (async () => {
-      removeTerminationCleanup?.();
       try {
         await restorePermission();
       } finally {
@@ -177,7 +183,19 @@ export async function runV2Print(
         app.dispose();
       }
     })());
-    await raceWithTimeout(pending, PROMPT_CLEANUP_TIMEOUT_MS);
+    const cleanupOutcome = await raceWithTimeout(pending, PROMPT_CLEANUP_TIMEOUT_MS).then(
+      () => ({ ok: true }) as const,
+      (error: unknown) => ({ ok: false, error }) as const,
+    );
+    await (outputDrainPromise ??= drainStdio(streams).finally(() => {
+      // Keep the signal handlers installed through async cleanup and output
+      // flushing. Removing them earlier restores Node's default immediate
+      // signal exit, which can discard the final assistant and resume hint.
+      removeTerminationCleanup?.();
+    }));
+    if (!cleanupOutcome.ok) {
+      throw cleanupOutcome.error;
+    }
   };
   removeTerminationCleanup = installPromptTerminationCleanup(promptProcess, cleanup);
 
@@ -346,7 +364,7 @@ async function resolveNativeSession(
     if (target.cwd !== undefined && resolve(target.cwd) !== resolve(workDir)) {
       stderr.write(
         `Session "${opts.session}" was created under a different directory.\n` +
-          `  cd "${target.cwd}" && kimi -r ${opts.session}\n\n`,
+          `  cd "${target.cwd}" && ${CLI_COMMAND_NAME} -r ${opts.session}\n\n`,
       );
       throw new Error(`Session "${opts.session}" was created under a different directory.`);
     }

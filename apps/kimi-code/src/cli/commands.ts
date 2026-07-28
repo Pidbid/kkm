@@ -24,13 +24,13 @@ export function createProgram(
   onUpgrade: UpgradeCommandHandler = () => {},
 ): Command {
   const program = new Command(CLI_COMMAND_NAME)
-    .description('The Starting Point for Next-Gen Agents')
+    .description('KKM, a portable terminal coding agent')
     .version(version, '-V, --version')
     .allowUnknownOption(false)
     .configureHelp({ helpWidth: 100 })
     .helpOption('-h, --help', 'Show help.')
     .usage('[options] [command]')
-    .addHelpText('after', '\nDocumentation:        https://moonshotai.github.io/kimi-code/\n');
+    .addHelpText('after', '\nRepository:           https://github.com/Pidbid/kkm\n');
 
   program
     .addOption(
@@ -124,7 +124,7 @@ export function createProgram(
   program
     .command('upgrade')
     .alias('update')
-    .description('Upgrade Kimi Code to the latest version.')
+    .description('Show where to download the latest KKM release.')
     .action(async () => {
       await onUpgrade();
     });

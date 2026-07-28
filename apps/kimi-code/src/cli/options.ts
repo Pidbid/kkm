@@ -1,3 +1,5 @@
+import { CLI_COMMAND_NAME } from '#/constant/app';
+
 import { isKimiV2Enabled } from './experimental-v2';
 
 export type UIMode = 'shell' | 'print';
@@ -104,7 +106,7 @@ export function validateOptions(
     (!promptMode || !isKimiV2Enabled(env))
   ) {
     throw new OptionConflictError(
-      '--agent/--agent-file are only available with the v2 engine (kimi -p with KIMI_CODE_EXPERIMENTAL_FLAG=1).',
+      `--agent/--agent-file are only available with the v2 engine (${CLI_COMMAND_NAME} -p with KIMI_CODE_EXPERIMENTAL_FLAG=1).`,
     );
   }
   if (promptMode && opts.session === '') {

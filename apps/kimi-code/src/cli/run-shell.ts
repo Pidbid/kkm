@@ -17,12 +17,12 @@ import {
   withTelemetryContext,
 } from '@moonshot-ai/kimi-telemetry';
 
-import { CLI_SHUTDOWN_TIMEOUT_MS, CLI_UI_MODE } from '#/constant/app';
+import { CLI_COMMAND_NAME, CLI_SHUTDOWN_TIMEOUT_MS, CLI_UI_MODE } from '#/constant/app';
 import { detectPendingMigration } from '#/migration/index';
 import type { TuiConfig } from '#/tui/config';
 import { loadTuiConfig, TuiConfigParseError } from '#/tui/config';
 import { CHROME_GUTTER } from '#/tui/constant/rendering';
-import { KimiTUI } from '#/tui/index';
+import { KimiTUI, type DeadTerminalErrorContext } from '#/tui/index';
 import { currentTheme, getColorPalette } from '#/tui/theme';
 import { combineStartupNotice } from '#/tui/utils/startup';
 import { toTerminalHyperlink } from '#/utils/terminal-hyperlink';
@@ -121,6 +121,37 @@ export async function runShell(
   });
   setCrashPhase('runtime');
 
+  tui.onDeadTerminalError = (context: DeadTerminalErrorContext): void => {
+    try {
+      log.error('terminal output stream failed, restoring terminal and exiting', {
+        error: context.error,
+        stream: context.stream,
+        errorCode: context.error.code,
+        errno: context.error.errno,
+        syscall: context.error.syscall,
+        sessionId: context.sessionId,
+        turnId: context.turnId,
+        step: context.step,
+        streamingPhase: context.streamingPhase,
+        exitCode: 129,
+        stdoutIsTTY: process.stdout.isTTY,
+        stderrIsTTY: process.stderr.isTTY,
+        stdoutDestroyed: process.stdout.destroyed,
+        stderrDestroyed: process.stderr.destroyed,
+        pid: process.pid,
+        ppid: process.ppid,
+      });
+    } catch {
+      /* ignore */
+    }
+    try {
+      // The TUI calls process.exit() immediately after this callback returns.
+      flushDiagnosticLogsSync();
+    } catch {
+      /* ignore */
+    }
+  };
+
   const trackLifecycleForSession = (
     sessionId: string,
     event: string,
@@ -207,7 +238,7 @@ export async function runShell(
     process.stdout.write(`${gutter}Bye!\n`);
     const hints: string[] = [];
     if (sessionId !== '' && hasContent) {
-      hints.push(`${gutter}To resume this session: kimi -r ${sessionId}`);
+      hints.push(`${gutter}To resume this session: ${CLI_COMMAND_NAME} -r ${sessionId}`);
     }
     if (tui.exitOpenUrl !== undefined) {
       hints.push(`${gutter}open ${toTerminalHyperlink(tui.exitOpenUrl, tui.exitOpenUrl)}`);

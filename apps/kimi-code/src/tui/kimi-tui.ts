@@ -23,6 +23,7 @@ import {
 import { resolve } from 'pathe';
 
 import type { CLIOptions } from '#/cli/options';
+import { CLI_COMMAND_NAME } from '#/constant/app';
 import { MigrationScreenComponent, type MigrationScreenResult } from '#/migration/index';
 import { copyTextToClipboard } from '#/utils/clipboard/clipboard-text';
 import { appendInputHistory, loadInputHistory } from '#/utils/history/input-history';
@@ -38,6 +39,7 @@ import {
   BUILTIN_SLASH_COMMANDS,
   buildPluginSlashCommands,
   buildSkillSlashCommands,
+  findInlineSkillNames,
   isExperimentalFlagEnabled,
   setExperimentalFeatures,
   sortSlashCommands,
@@ -184,6 +186,15 @@ export interface KimiTUIStartupInput {
   readonly migrateOnly?: boolean;
 }
 
+export interface DeadTerminalErrorContext {
+  readonly stream: 'stdout' | 'stderr';
+  readonly error: NodeJS.ErrnoException;
+  readonly sessionId?: string;
+  readonly turnId?: string;
+  readonly step: number;
+  readonly streamingPhase: AppState['streamingPhase'];
+}
+
 type EffectiveActivityPaneMode = ActivityPaneMode | 'idle' | 'session';
 type LoadingTipKind = 'moon' | 'composing';
 
@@ -243,6 +254,7 @@ interface SendMessageOptions {
   readonly parts?: readonly PromptPart[];
   readonly imageAttachmentIds?: readonly number[];
   readonly hasMedia?: boolean;
+  readonly skillNames?: readonly string[];
 }
 
 /**
@@ -301,6 +313,7 @@ export class KimiTUI {
   private readonly questionController = new QuestionController();
   private readonly reverseRpcDisposers: Array<() => void> = [];
   private skillCommands: readonly KimiSlashCommand[] = [];
+  private inlineSkillCommands: readonly KimiSlashCommand[] = [];
   readonly skillCommandMap = new Map<string, string>();
   private pluginCommands: readonly KimiSlashCommand[] = [];
   readonly pluginCommandMap = new Map<string, string>();
@@ -358,6 +371,9 @@ export class KimiTUI {
     | undefined;
 
   public onExit?: (exitCode?: number) => Promise<void>;
+
+  /** Called synchronously before a dead output stream triggers the emergency exit. */
+  public onDeadTerminalError?: (context: DeadTerminalErrorContext) => void;
 
   /** URL opened in the browser just before exit (e.g. by `/web`); printed by onExit. */
   public exitOpenUrl: string | undefined;
@@ -453,6 +469,7 @@ export class KimiTUI {
       this.fdPath,
       this.state.appState.additionalDirs,
       () => this.state.appState.inputMode,
+      this.inlineSkillCommands,
     );
     this.state.editor.setAutocompleteProvider(provider);
 
@@ -474,6 +491,7 @@ export class KimiTUI {
   async refreshSkillCommands(session?: SkillListSession): Promise<void> {
     if (session === undefined) {
       this.skillCommands = [];
+      this.inlineSkillCommands = [];
       this.skillCommandMap.clear();
       this.setupAutocomplete();
       return;
@@ -487,6 +505,7 @@ export class KimiTUI {
     }
     const skillCommands = buildSkillSlashCommands(skills);
     this.skillCommands = skillCommands.commands;
+    this.inlineSkillCommands = skillCommands.inlineCommands;
     this.skillCommandMap.clear();
     for (const [commandName, skillName] of skillCommands.commandMap) {
       this.skillCommandMap.set(commandName, skillName);
@@ -770,7 +789,7 @@ export class KimiTUI {
               `${currentTheme.fg(
                 'warning',
                 `Session "${startup.sessionFlag}" was created under a different directory.\n` +
-                  `  cd "${target.workDir}" && kimi -r ${startup.sessionFlag}`,
+                  `  cd "${target.workDir}" && ${CLI_COMMAND_NAME} -r ${startup.sessionFlag}`,
               )}\n\n`,
             );
             throw new Error(
@@ -906,18 +925,35 @@ export class KimiTUI {
       });
     }
 
-    const terminalErrorHandler = (error: Error): void => {
-      if (isDeadTerminalError(error)) {
+    const createTerminalErrorHandler =
+      (stream: DeadTerminalErrorContext['stream']) =>
+      (error: Error): void => {
+        if (!isDeadTerminalError(error)) return;
+        try {
+          const sessionId = this.getCurrentSessionId();
+          const { turnId, step } = this.streamingUI.getTurnContext();
+          this.onDeadTerminalError?.({
+            stream,
+            error: error as NodeJS.ErrnoException,
+            sessionId: sessionId === '' ? undefined : sessionId,
+            turnId,
+            step,
+            streamingPhase: this.state.appState.streamingPhase,
+          });
+        } catch {
+          // Diagnostic recording is best-effort and must not block emergency exit.
+        }
         this.emergencyTerminalExit();
-      }
-    };
-    process.stdout.on('error', terminalErrorHandler);
-    process.stderr.on('error', terminalErrorHandler);
+      };
+    const stdoutErrorHandler = createTerminalErrorHandler('stdout');
+    const stderrErrorHandler = createTerminalErrorHandler('stderr');
+    process.stdout.on('error', stdoutErrorHandler);
+    process.stderr.on('error', stderrErrorHandler);
     this.signalCleanupHandlers.push(() => {
-      process.stdout.off('error', terminalErrorHandler);
+      process.stdout.off('error', stdoutErrorHandler);
     });
     this.signalCleanupHandlers.push(() => {
-      process.stderr.off('error', terminalErrorHandler);
+      process.stderr.off('error', stderrErrorHandler);
     });
   }
 
@@ -1153,12 +1189,16 @@ export class KimiTUI {
       this.showError(LLM_NOT_SET_MESSAGE);
       return;
     }
+    const skillNames = findInlineSkillNames(text, this.skillCommandMap);
     if (extraction.hasMedia) {
       this.sendMessage(session, text, {
         hasMedia: true,
         parts: extraction.parts,
         imageAttachmentIds: extraction.imageAttachmentIds,
+        skillNames,
       });
+    } else if (skillNames.length > 0) {
+      this.sendMessage(session, text, { skillNames });
     } else {
       this.sendMessage(session, text);
     }
@@ -1243,6 +1283,7 @@ export class KimiTUI {
       text,
       agentId: this.harness.interactiveAgentId,
       parts: options?.parts,
+      skillNames: options?.skillNames,
       imageAttachmentIds:
         options?.imageAttachmentIds !== undefined && options.imageAttachmentIds.length > 0
           ? options.imageAttachmentIds
@@ -1284,6 +1325,7 @@ export class KimiTUI {
       this.sendMessageInternal(session, item.text, {
         parts: item.parts,
         imageAttachmentIds: item.imageAttachmentIds,
+        skillNames: item.skillNames,
       });
     });
   }
@@ -1314,7 +1356,10 @@ export class KimiTUI {
     // continuation boundary and is rejected with `turn.agent_busy`, dropping
     // the message. Steer instead: the engine buffers it into the running goal
     // turn, or launches a turn of its own if the loop just ended.
-    if (this.state.appState.goal?.status === 'active') {
+    if (
+      this.state.appState.goal?.status === 'active' &&
+      (options?.skillNames === undefined || options.skillNames.length === 0)
+    ) {
       void session.steer(sdkInput).catch((error: unknown) => {
         const message = formatErrorMessage(error);
         // Same reset as the prompt path: beginSessionRequest already moved the
@@ -1323,6 +1368,18 @@ export class KimiTUI {
         // queueing input behind a request that never completes.
         this.failSessionRequest(`Failed to steer: ${message}`);
       });
+      return;
+    }
+    if (options?.skillNames !== undefined && options.skillNames.length > 0) {
+      void session
+        .promptWithSkills(
+          options.skillNames.map((name) => ({ name })),
+          sdkInput,
+        )
+        .catch((error: unknown) => {
+          const message = formatErrorMessage(error);
+          this.failSessionRequest(`Failed to send: ${message}`);
+        });
       return;
     }
     void session.prompt(sdkInput).catch((error: unknown) => {
@@ -1709,7 +1766,7 @@ export class KimiTUI {
 
   private async showResumeOtherWorkDirHint(session: SessionRow): Promise<void> {
     this.hideSessionPicker();
-    const command = `cd ${quoteShellArg(session.work_dir)} && kimi --resume ${quoteShellArg(session.id)}`;
+    const command = `cd ${quoteShellArg(session.work_dir)} && ${CLI_COMMAND_NAME} --resume ${quoteShellArg(session.id)}`;
     const message = `Current session is in a different working directory.\n  To resume, run: ${command}`;
     try {
       await copyTextToClipboard(command);
@@ -2995,7 +3052,7 @@ export class KimiTUI {
   private showApprovalPanel(payload: ApprovalPanelData): void {
     this.patchLivePane({ pendingApproval: { data: payload } });
     notifyTerminalOnce(this.state, `approval:${payload.id}`, {
-      title: 'Kimi Code approval required',
+      title: 'KKM approval required',
       body: payload.tool_name,
     });
     const panel = new ApprovalPanelComponent(
@@ -3062,7 +3119,7 @@ export class KimiTUI {
   private showQuestionDialog(payload: QuestionPanelData): void {
     this.patchLivePane({ pendingQuestion: { data: payload } });
     notifyTerminalOnce(this.state, `question:${payload.id}`, {
-      title: 'Kimi Code needs your answer',
+      title: 'KKM needs your answer',
       body: payload.questions[0]?.question,
     });
     const dialog = new QuestionDialogComponent(

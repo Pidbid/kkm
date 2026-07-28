@@ -96,6 +96,7 @@ function stripSgr(text: string): string {
 
 interface MessageDriver {
   state: TUIState;
+  skillCommandMap: Map<string, string>;
   streamingUI: StreamingUIController;
   sessionEventHandler: {
     startSubscription(): void;
@@ -232,6 +233,7 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     reloadPlugins: vi.fn(async () => ({ added: [], removed: [], errors: [] })),
     reloadSession: vi.fn(async () => ({})),
     activateSkill: vi.fn(async () => {}),
+    promptWithSkills: vi.fn(async () => {}),
     getPluginInfo: vi.fn(async (id: string) => ({
       id,
       displayName: id,
@@ -2100,6 +2102,40 @@ command = "vim"
 
     expect(session.activateSkill).not.toHaveBeenCalled();
     expect(stripSgr(renderTranscript(driver))).toContain('Failed to prepare media attachment');
+  });
+
+  it('submits inline skills once in first-occurrence order with the original prompt', async () => {
+    const session = makeSession();
+    const { driver } = await makeDriver(session);
+    driver.state.appState.model = 'k2';
+    driver.skillCommandMap.set('skill:review', 'review');
+    driver.skillCommandMap.set('skill:commit', 'commit');
+
+    driver.handleUserInput(
+      'Use /skill:review, fix the issue, then /skill:review and /skill:commit.',
+    );
+
+    expect(session.promptWithSkills).toHaveBeenCalledWith(
+      [{ name: 'review' }, { name: 'commit' }],
+      'Use /skill:review, fix the issue, then /skill:review and /skill:commit.',
+    );
+    expect(session.prompt).not.toHaveBeenCalled();
+  });
+
+  it('submits multiple skills as one prompt when the first skill starts the message', async () => {
+    const session = makeSession();
+    const { driver } = await makeDriver(session);
+    driver.state.appState.model = 'k2';
+    driver.skillCommandMap.set('skill:review', 'review');
+    driver.skillCommandMap.set('skill:commit', 'commit');
+
+    driver.handleUserInput('/skill:review check this, then /skill:commit');
+
+    expect(session.promptWithSkills).toHaveBeenCalledWith(
+      [{ name: 'review' }, { name: 'commit' }],
+      '/skill:review check this, then /skill:commit',
+    );
+    expect(session.activateSkill).not.toHaveBeenCalled();
   });
 
   it('shows an error instead of throwing when plugin command media materialization fails', async () => {
@@ -4046,7 +4082,7 @@ command = "vim"
       expect(getStatus).toHaveBeenCalledTimes(previousStatusCalls + 1);
       const output = stripSgr(driver.state.transcriptContainer.render(120).join('\n'));
       expect(output).toContain(' Status ');
-      expect(output).toContain('>_ Kimi Code');
+      expect(output).toContain('>_ KKM');
       expect(output).toContain('Model');
       expect(output).toContain('thinking high');
       expect(output).toContain('Permissions  auto');
@@ -4796,8 +4832,8 @@ command = "vim"
     });
     const picker = driver.state.editorContainer.children[0];
     const pickerOutput = stripSgr((picker as TabbedModelSelectorComponent).render(120).join('\n'));
-    expect(pickerOutput).toMatch(/Kimi K2\s+Kimi Code ← current/);
-    expect(pickerOutput).toMatch(/❯ Kimi Turbo\s+Kimi Code/);
+    expect(pickerOutput).toMatch(/Kimi K2\s+KKM ← current/);
+    expect(pickerOutput).toMatch(/❯ Kimi Turbo\s+KKM/);
     (picker as TabbedModelSelectorComponent).handleInput('t');
     (picker as TabbedModelSelectorComponent).handleInput('u');
     const filteredOutput = stripSgr((picker as TabbedModelSelectorComponent).render(120).join('\n'));
@@ -5274,7 +5310,7 @@ command = "vim"
       expect(forked.onEvent).toHaveBeenCalledOnce();
       expect(harness.resumeSession).not.toHaveBeenCalled();
       expect(driver.state.transcriptContainer.render(120).join('\n')).toContain(
-        'Session forked (ses-fork). To return to the original session: kimi -r ses-source',
+        'Session forked (ses-fork). To return to the original session: kkm -r ses-source',
       );
     } finally {
       process.title = originalTitle;

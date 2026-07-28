@@ -29,8 +29,8 @@ import {
 } from '@moonshot-ai/acp-adapter';
 import { createKimiHarness, type Session, type SkillSummary } from '@moonshot-ai/kimi-code-sdk';
 
-import { KIMI_CODE_HOME_ENV } from '#/constant/app';
 import { createKimiCodeHostIdentity, getVersion } from '#/cli/version';
+import { KIMI_CODE_HOME_ENV } from '#/constant/app';
 import { buildSkillSlashCommands } from '#/tui/commands/skills';
 
 import { runLoginFlow } from './login-flow';
@@ -110,7 +110,7 @@ export function registerAcpCommand(parent: Command): void {
       };
       try {
         await runAcpServer(harness, {
-          agentInfo: { name: 'Kimi Code CLI', version: getVersion() },
+          agentInfo: { name: 'KKM', version: getVersion() },
           slashCommands: resolveSlashCommands,
           ...(terminalAuthEnv ? { terminalAuthEnv } : {}),
           ...(legacyCommand !== undefined && legacyCommand.length > 0

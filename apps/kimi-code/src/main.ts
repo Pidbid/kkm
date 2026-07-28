@@ -34,7 +34,13 @@ import { handleUpgrade } from './cli/sub/upgrade';
 import { createCliTelemetryBootstrap, initializeCliTelemetry } from './cli/telemetry';
 import { runUpdatePreflight } from './cli/update/preflight';
 import { createKimiCodeHostIdentity, getVersion } from './cli/version';
-import { CLI_SHUTDOWN_TIMEOUT_MS, CLI_UI_MODE, PROCESS_NAME } from './constant/app';
+import {
+  CLI_COMMAND_NAME,
+  CLI_SHUTDOWN_TIMEOUT_MS,
+  CLI_UI_MODE,
+  KKM_RELEASES_URL,
+  PROCESS_NAME,
+} from './constant/app';
 import { cleanupStaleNativeCacheForCurrent } from './native/native-assets';
 import { installNativeModuleHook } from './native/module-hook';
 import { runNativeAssetSmokeIfRequested } from './native/smoke';
@@ -66,12 +72,16 @@ export async function handleMainCommand(
     throw error;
   }
 
-  const preflightResult = await runUpdatePreflight(
-    version,
-    validated.uiMode === 'print' ? { track, isTTY: false } : { track },
-  );
-  if (preflightResult === 'exit') {
-    process.exit(0);
+  // KKM releases are published from this fork, while the inherited updater
+  // targets the upstream Kimi package/CDN. Do not allow it to replace KKM.
+  if (CLI_COMMAND_NAME !== 'kkm') {
+    const preflightResult = await runUpdatePreflight(
+      version,
+      validated.uiMode === 'print' ? { track, isTTY: false } : { track },
+    );
+    if (preflightResult === 'exit') {
+      process.exit(0);
+    }
   }
 
   if (validated.uiMode === 'print') {
@@ -89,6 +99,11 @@ async function handleMigrateCommand(version: string): Promise<void> {
 }
 
 export async function handleUpgradeCommand(version: string): Promise<void> {
+  if (CLI_COMMAND_NAME === 'kkm') {
+    process.stdout.write(`Download the latest KKM release: ${KKM_RELEASES_URL}\n`);
+    process.exit(0);
+  }
+
   const telemetryBootstrap = createCliTelemetryBootstrap();
   const telemetryClient: TelemetryClient = {
     track,

@@ -551,6 +551,32 @@ export class Session {
     });
   }
 
+  async promptWithSkills(
+    skills: readonly { readonly name: string; readonly args?: string | undefined }[],
+    input: string | PromptInput,
+  ): Promise<void> {
+    this.ensureOpen();
+    if (skills.length === 0) {
+      throw new KimiError(ErrorCodes.REQUEST_INVALID, 'At least one skill is required');
+    }
+    const normalized = skills.map((skill) => ({
+      name: normalizeRequiredString(
+        skill.name,
+        'Skill name cannot be empty',
+        ErrorCodes.SKILL_NAME_EMPTY,
+      ),
+      args: normalizeOptionalString(skill.args),
+    }));
+    const [first, ...additionalSkills] = normalized;
+    await this.rpc.activateSkill({
+      sessionId: this.id,
+      name: first!.name,
+      args: first!.args,
+      additionalSkills,
+      prompt: normalizePromptInput(input),
+    });
+  }
+
   async activatePluginCommand(
     pluginId: string,
     commandName: string,

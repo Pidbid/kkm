@@ -244,6 +244,14 @@ function convertMessage(
   return result;
 }
 
+function isAssistantMessageWithoutContentOrToolCalls(message: OpenAIMessage): boolean {
+  return (
+    message.role === 'assistant' &&
+    message.content === undefined &&
+    message.tool_calls === undefined
+  );
+}
+
 // Chat Completions has no url-based audio/video content part (only base64
 // `input_audio`), so unlike images these cannot be reattached as user input.
 // Note the omission inline in the tool message text instead.
@@ -311,7 +319,13 @@ function convertHistoryMessages(
     if (msg.role !== 'tool') {
       appendToolResultMediaMessage(messages, pendingToolResultMedia);
     }
-    messages.push(convertMessage(msg, reasoningKey, toolMessageConversion));
+    const converted = convertMessage(msg, reasoningKey, toolMessageConversion);
+    // `reasoning_content` is supplemental: OpenAI-compatible APIs still
+    // require an assistant message to carry content or tool calls. A process
+    // interrupted mid-thinking can leave this invalid shape in history.
+    if (!isAssistantMessageWithoutContentOrToolCalls(converted)) {
+      messages.push(converted);
+    }
     if (msg.role === 'tool') {
       pendingToolResultMedia.push(...toolResultImageParts(msg));
     }
@@ -386,8 +400,17 @@ export class OpenAILegacyStreamedMessage implements StreamedMessage {
 
     // Reasoning content: honor the explicit key when set, otherwise scan the
     // de facto field set and remember the dialect for outbound echo.
+    // Skip empty strings on pure content messages: some gateways pad every
+    // content-phase chunk with an empty reasoning field, which would otherwise
+    // interleave empty think parts between text deltas and defeat sequential
+    // merging downstream. Tool-call messages keep the empty marker so the
+    // reasoning field is replayed on continuation, as some reasoning
+    // endpoints require.
     const reasoning = reasoningKeyDialect.observe(message);
-    if (reasoning !== undefined) {
+    if (
+      reasoning !== undefined &&
+      (reasoning.length > 0 || (message.tool_calls?.length ?? 0) > 0)
+    ) {
       yield { type: 'think', think: reasoning } satisfies StreamedMessagePart;
     }
 
@@ -441,8 +464,18 @@ export class OpenAILegacyStreamedMessage implements StreamedMessage {
 
         // Reasoning content: honor the explicit key when set, otherwise scan
         // the de facto field set and remember the dialect for outbound echo.
+        // Skip empty strings on content-only chunks: some gateways pad every
+        // content-phase chunk with an empty reasoning field, which would
+        // otherwise interleave empty think parts between text deltas and
+        // defeat sequential merging. Tool-call chunks keep the empty marker
+        // so the reasoning field is replayed on continuation, as some
+        // reasoning endpoints require; adjacent empty think parts merge into
+        // one, so at most a single marker survives.
         const reasoning = reasoningKeyDialect.observe(delta);
-        if (reasoning !== undefined) {
+        if (
+          reasoning !== undefined &&
+          (reasoning.length > 0 || (delta.tool_calls?.length ?? 0) > 0)
+        ) {
           yield { type: 'think', think: reasoning } satisfies StreamedMessagePart;
         }
 
@@ -553,10 +586,11 @@ export class OpenAILegacyChatProvider implements ChatProvider {
       history,
       OPENAI_CHAT_TOOL_CALL_ID_POLICY,
     );
+    const reasoningKey = this._reasoningKeyDialect.outboundKey();
     messages.push(
       ...convertHistoryMessages(
         normalizedHistory,
-        this._reasoningKeyDialect.outboundKey(),
+        reasoningKey,
         this._toolMessageConversion,
       ),
     );
@@ -594,10 +628,10 @@ export class OpenAILegacyChatProvider implements ChatProvider {
       effort !== 'off' &&
       kwargs['reasoning_effort'] === undefined
     ) {
-      const hasThinkPart = history.some((message) =>
-        message.content.some((part) => part.type === 'think'),
+      const hasReasoningContent = messages.some(
+        (message) => message[reasoningKey] !== undefined,
       );
-      if (hasThinkPart) {
+      if (hasReasoningContent) {
         reasoningEffort = 'medium';
       }
     }

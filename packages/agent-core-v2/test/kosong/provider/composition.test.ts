@@ -57,7 +57,11 @@ import {
 import '#/kosong/provider/bases/google-genai/index';
 import { GoogleGenAIChatProvider } from '#/kosong/provider/bases/google-genai/google-genai';
 import '#/kosong/provider/bases/openai/index';
-import { OpenAIResponsesChatProvider } from '#/kosong/provider/bases/openai/openai-responses';
+import { extractUsage } from '#/kosong/provider/bases/openai/openai-common';
+import {
+  OpenAIResponsesChatProvider,
+  OpenAIResponsesStreamedMessage,
+} from '#/kosong/provider/bases/openai/openai-responses';
 import { OpenAILegacyChatProvider } from '#/kosong/provider/bases/openai/openai-legacy';
 import { ProtocolAdapterRegistry } from '#/kosong/provider/protocolAdapterRegistry';
 import {
@@ -662,6 +666,46 @@ async function captureResponsesBody(
   return captured;
 }
 
+describe('OpenAI usage normalization', () => {
+  it('keeps Chat Completions uncached input non-negative when cached tokens lack a prompt total', () => {
+    expect(
+      extractUsage({
+        completion_tokens: 5,
+        prompt_tokens_details: { cached_tokens: 10 },
+      }),
+    ).toEqual({
+      inputOther: 0,
+      output: 5,
+      inputCacheRead: 10,
+      inputCacheCreation: 0,
+    });
+  });
+
+  it('keeps Responses uncached input non-negative when cached tokens lack an input total', async () => {
+    const stream = new OpenAIResponsesStreamedMessage(
+      {
+        id: 'resp_partial_usage',
+        status: 'completed',
+        output: [],
+        usage: {
+          output_tokens: 5,
+          input_tokens_details: { cached_tokens: 10 },
+        },
+      },
+      false,
+    );
+
+    await drain(stream);
+
+    expect(stream.usage).toEqual({
+      inputOther: 0,
+      output: 5,
+      inputCacheRead: 10,
+      inputCacheCreation: 0,
+    });
+  });
+});
+
 describe('per-turn intent wire encoding (behavior probes)', () => {
   it('encodes cacheKey + thinking + budget on the Kimi wire as prompt_cache_key + expanded thinking, never reasoning_effort', async () => {
     const provider = registry.createChatProvider({
@@ -1077,6 +1121,28 @@ describe('Anthropic max-tokens profile', () => {
     expect(resolveDefaultMaxTokens('totally-unknown-model')).toBe(128000);
   });
 
+  it('defaults unknown models on custom endpoints to a conservative ceiling', () => {
+    expect(
+      resolveDefaultMaxTokens('totally-unknown-model', undefined, 'https://proxy.example.test/v1'),
+    ).toBe(32768);
+  });
+
+  it('keeps the 128000 fallback for unknown models on the official endpoint or no endpoint', () => {
+    expect(
+      resolveDefaultMaxTokens('totally-unknown-model', undefined, 'https://api.anthropic.com'),
+    ).toBe(128000);
+    expect(resolveDefaultMaxTokens('totally-unknown-model', undefined, '')).toBe(128000);
+  });
+
+  it('does not let a custom endpoint displace an explicit override or a known ceiling', () => {
+    expect(resolveDefaultMaxTokens('unknown-model', 12345, 'https://proxy.example.test/v1')).toBe(
+      12345,
+    );
+    expect(
+      resolveDefaultMaxTokens('claude-opus-4-7', undefined, 'https://proxy.example.test/v1'),
+    ).toBe(128000);
+  });
+
   it('sends the profile default as max_tokens when no explicit defaultMaxTokens is set', async () => {
     const provider = new AnthropicChatProvider({
       model: 'claude-opus-4-7',
@@ -1126,6 +1192,19 @@ describe('Anthropic max-tokens profile', () => {
     const { params } = await captureAnthropicBody(provider, { maxCompletionTokens: 5000 });
 
     expect(params['max_tokens']).toBe(999999);
+  });
+
+  it('seeds the conservative fallback for unknown models on custom endpoints', async () => {
+    const provider = new AnthropicChatProvider({
+      model: 'totally-unknown-model',
+      apiKey: 'sk-probe',
+      baseUrl: 'https://proxy.example.test/v1',
+      stream: false,
+    });
+
+    const { params } = await captureAnthropicBody(provider);
+
+    expect(params['max_tokens']).toBe(32768);
   });
 });
 

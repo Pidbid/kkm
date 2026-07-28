@@ -130,6 +130,53 @@ describe('skill discovery', () => {
     expect(warnings.some((message) => message.includes('Ignoring flat skill'))).toBe(true);
   });
 
+  it('treats .md files inside a skill bundle dir as payload, not flat skills', async () => {
+    const { repoDir } = await makeWorkspace();
+    const bundleRoot = path.join(repoDir, 'plugin-skills', 'teach');
+    await writeSkill(bundleRoot, 'SKILL.md', [
+      '---',
+      'name: teach',
+      'description: Teaching skill',
+      '---',
+      '',
+      'Teach body.',
+    ]);
+    await writeSkill(bundleRoot, 'GLOSSARY-FORMAT.md', [
+      '---',
+      'name: GLOSSARY-FORMAT',
+      'description: Auxiliary reference doc',
+      '---',
+      '',
+      'Glossary format reference.',
+    ]);
+
+    const skills = await discoverSkills({
+      roots: [{ path: bundleRoot, source: 'extra', plugin: { id: 'mattpocock-skills' } }],
+    });
+
+    expect(skills.map((skill) => skill.name)).toEqual(['teach']);
+  });
+
+  it('still registers flat .md skills in collection dirs without a top-level SKILL.md', async () => {
+    const { repoDir } = await makeWorkspace();
+    const collectionRoot = path.join(repoDir, 'plugin-skills');
+    await writeSkill(collectionRoot, path.join('teach', 'SKILL.md'), [
+      '---',
+      'name: teach',
+      'description: Teaching skill',
+      '---',
+      '',
+      'Teach body.',
+    ]);
+    await writeSkill(collectionRoot, 'review.md', ['Flat review body.']);
+
+    const skills = await discoverSkills({
+      roots: [{ path: collectionRoot, source: 'extra', plugin: { id: 'mattpocock-skills' } }],
+    });
+
+    expect(skills.map((skill) => skill.name).toSorted()).toEqual(['review', 'teach']);
+  });
+
   it('keeps flow skills user-visible while excluding them from model invocation', async () => {
     const { repoDir } = await makeWorkspace();
     const projectRoot = path.join(repoDir, '.kimi-code', 'skills');
@@ -195,6 +242,34 @@ describe('skill discovery', () => {
     expect(warnings.some((message) => message.includes('Missing frontmatter'))).toBe(true);
     expect(warnings.some((message) => message.includes('"name"'))).toBe(true);
     expect(warnings.some((message) => message.includes('"description"'))).toBe(true);
+  });
+
+  it('reports a skill with unparseable frontmatter as skipped, not just warned', async () => {
+    // Regression for #1972: a `description` containing a bare "word: word"
+    // (e.g. "Triggers on: ...") is invalid as a plain YAML scalar, so the
+    // frontmatter fails to parse. The skill used to vanish with only a log
+    // line nobody sees; it must now show up in the skipped list too.
+    const { repoDir } = await makeWorkspace();
+    const projectRoot = path.join(repoDir, '.kimi-code', 'skills');
+    await writeSkill(projectRoot, path.join('codebase-memory', 'SKILL.md'), [
+      '---',
+      'name: codebase-memory',
+      'description: Explore the codebase. Triggers on: find callers of.',
+      '---',
+      '',
+      'Body.',
+    ]);
+
+    const skipped: { path: string; type: string; reason: string }[] = [];
+    const skills = await discoverSkills({
+      roots: [{ path: projectRoot, source: 'project' }],
+      onSkippedByPolicy: (skill) => skipped.push(skill),
+    });
+
+    expect(skills).toEqual([]);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]?.type).toBe('invalid-frontmatter');
+    expect(skipped[0]?.path).toContain('codebase-memory/SKILL.md');
   });
 });
 

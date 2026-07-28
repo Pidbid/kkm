@@ -270,6 +270,66 @@ describe('FileMentionProvider', () => {
     expect(result).toBeNull();
   });
 
+  it('offers only canonical skill commands after whitespace and on later lines', async () => {
+    const inlineSkills = [
+      { name: 'skill:review', aliases: [], description: 'Review code' },
+      { name: 'skill:commit', aliases: [], description: 'Commit changes' },
+    ];
+    const provider = new FileMentionProvider(
+      [HELP_COMMAND],
+      workDir,
+      NO_FD,
+      [],
+      () => 'prompt',
+      inlineSkills,
+    );
+
+    const inline = await provider.getSuggestions(['Please use /sk'], 0, 14, { signal: ctrl() });
+    const multiline = await provider.getSuggestions(['Please use', '/sk'], 1, 3, {
+      signal: ctrl(),
+    });
+
+    expect(inline).toMatchObject({
+      prefix: '/sk',
+      items: [
+        expect.objectContaining({ value: 'skill:review' }),
+        expect.objectContaining({ value: 'skill:commit' }),
+      ],
+    });
+    expect(multiline?.items.map((item) => item.value)).toEqual([
+      'skill:review',
+      'skill:commit',
+    ]);
+  });
+
+  it('inserts an inline skill token without replacing the surrounding prompt', () => {
+    const inlineSkills = [
+      { name: 'skill:review', aliases: [], description: 'Review code' },
+    ];
+    const provider = new FileMentionProvider(
+      [],
+      workDir,
+      NO_FD,
+      [],
+      () => 'prompt',
+      inlineSkills,
+    );
+
+    expect(
+      provider.applyCompletion(
+        ['Please /sk then continue'],
+        0,
+        'Please /sk'.length,
+        { value: 'skill:review', label: 'skill:review' },
+        '/sk',
+      ),
+    ).toEqual({
+      lines: ['Please /skill:review then continue'],
+      cursorLine: 0,
+      cursorCol: 'Please /skill:review '.length,
+    });
+  });
+
   it('still allows forced root path completion after leading whitespace', async () => {
     const provider = new FileMentionProvider([], workDir, NO_FD);
     const result = await provider.getSuggestions([' /'], 0, 2, { signal: ctrl(), force: true });

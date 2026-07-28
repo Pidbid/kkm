@@ -35,6 +35,7 @@ describe('HarnessAPI session skills', () => {
     homeDir = join(tmp, 'home');
     workDir = join(tmp, 'work');
     await mkdir(workDir, { recursive: true });
+    await mkdir(join(workDir, '.git'), { recursive: true });
   });
 
   afterEach(async () => {
@@ -258,6 +259,81 @@ describe('HarnessAPI session skills', () => {
     expect(expectedPrompt).not.toContain('<system-reminder>');
     expect(expectedPrompt).toContain('trigger="user-slash"');
     expect(expectedPrompt).toContain('User activated the skill "phase-one-review".');
+  });
+
+  it('activates multiple skills and the original prompt in one turn', async () => {
+    await writeSkill('review', [
+      '---',
+      'name: review',
+      'description: Review code',
+      '---',
+      '',
+      'Review the change.',
+    ]);
+    await writeSkill('commit', [
+      '---',
+      'name: commit',
+      'description: Commit changes',
+      '---',
+      '',
+      'Commit the validated change.',
+    ]);
+    const { events, rpc } = await createTestRpc({ homeDir });
+    const created = await rpc.createSession({ id: 'ses_multi_skill_activate', workDir });
+    const promptText = 'Use /skill:review and then /skill:commit.';
+
+    await rpc.activateSkill({
+      sessionId: created.id,
+      agentId: 'main',
+      name: 'review',
+      additionalSkills: [{ name: 'commit' }],
+      prompt: [{ type: 'text', text: promptText }],
+    });
+    await waitForEvent(events, (event) => event.type === 'turn.ended');
+
+    expect(
+      events
+        .filter((event) => event.type === 'skill.activated')
+        .map((event) => event.skillName),
+    ).toEqual(['review', 'commit']);
+    expect(events.filter((event) => event.type === 'turn.started')).toHaveLength(1);
+
+    const records = await readMainWire(created.sessionDir);
+    const prompts = records.filter((record) => record['type'] === 'turn.prompt');
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toMatchObject({
+      input: [
+        { type: 'text', text: expect.stringContaining('name="review"') },
+        { type: 'text', text: expect.stringContaining('name="commit"') },
+        { type: 'text', text: promptText },
+      ],
+    });
+  });
+
+  it('validates every skill before recording a multi-skill activation', async () => {
+    await writeSkill('review', [
+      '---',
+      'name: review',
+      'description: Review code',
+      '---',
+      '',
+      'Review the change.',
+    ]);
+    const { events, rpc } = await createTestRpc({ homeDir });
+    const created = await rpc.createSession({ id: 'ses_multi_skill_invalid', workDir });
+
+    await expect(
+      rpc.activateSkill({
+        sessionId: created.id,
+        agentId: 'main',
+        name: 'review',
+        additionalSkills: [{ name: 'missing' }],
+        prompt: [{ type: 'text', text: 'Review and continue.' }],
+      }),
+    ).rejects.toMatchObject({ code: 'skill.not_found' });
+
+    expect(events.some((event) => event.type === 'skill.activated')).toBe(false);
+    expect(events.some((event) => event.type === 'turn.started')).toBe(false);
   });
 
   it('expands skill body placeholders on user slash activation', async () => {
@@ -609,6 +685,29 @@ describe('HarnessAPI session skills', () => {
       source: 'project',
       description: 'Project-local override',
     });
+  });
+
+  it('reports a skill-load-failed session warning for a SKILL.md that fails to parse', async () => {
+    // Regression for #1972: an unquoted colon in `description` (e.g.
+    // "Triggers on: ...") makes the frontmatter invalid YAML, and the skill
+    // used to be dropped with no signal reaching the TUI, which calls this
+    // same `getSessionWarnings` RPC at session start.
+    await writeSkill('broken', [
+      '---',
+      'name: broken',
+      'description: Explore the codebase. Triggers on: find callers of.',
+      '---',
+      '',
+      'Body.',
+    ]);
+    const { rpc } = await createTestRpc();
+    const created = await rpc.createSession({ id: 'ses_skill_warning', workDir });
+
+    const warnings = await rpc.getSessionWarnings({ sessionId: created.id });
+
+    const skillWarning = warnings.find((warning) => warning.code === 'skill-load-failed');
+    expect(skillWarning?.message).toContain('broken/SKILL.md');
+    expect(skillWarning?.severity).toBe('warning');
   });
 
   it('rejects missing and non-inline skills with structured errors', async () => {

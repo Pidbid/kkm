@@ -1,8 +1,9 @@
 import { ErrorCodes } from '@moonshot-ai/kimi-code-sdk';
 
-export const PRODUCT_NAME = 'Kimi Code';
-export const CLI_COMMAND_NAME = 'kimi';
-export const PROCESS_NAME = 'kimi-code';
+export const PRODUCT_NAME = 'KKM';
+export const CLI_COMMAND_NAME = 'kkm';
+export const PROCESS_NAME = 'kkm';
+export const KKM_RELEASES_URL = 'https://github.com/Pidbid/kkm/releases/latest';
 
 // Used in telemetry app names and HTTP User-Agent headers.
 export const CLI_USER_AGENT_PRODUCT = 'kimi-code-cli';

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -92,6 +92,16 @@ describe('GitService', () => {
       expect(result.entries).toEqual({ 'a.txt': 'modified' });
     });
 
+    it('lists files inside untracked directories individually', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'a\n');
+      commitAll('init');
+      mkdirSync(join(repo, 'newdir'), { recursive: true });
+      writeFileSync(join(repo, 'newdir', 'b.txt'), 'b\n');
+
+      const result = await service.status(repo);
+      expect(result.entries).toEqual({ 'newdir/b.txt': 'untracked' });
+    });
+
     it('throws FS_GIT_UNAVAILABLE when not a repo', async () => {
       const notRepo = mkdtempSync(join(tmpdir(), 'not-repo-'));
       try {
@@ -124,6 +134,15 @@ describe('GitService', () => {
 
       const result = await service.diff(repo, 'b.txt', join(repo, 'b.txt'));
       expect(result.diff).toContain('+brand new');
+    });
+
+    it('limits a large UTF-8 diff to one MiB', async () => {
+      writeFileSync(join(repo, 'large.txt'), '界'.repeat(400_000));
+
+      const result = await service.diff(repo, 'large.txt', join(repo, 'large.txt'));
+
+      expect(result.truncated).toBe(true);
+      expect(Buffer.byteLength(result.diff, 'utf8')).toBeLessThanOrEqual(1_048_576);
     });
 
     it('throws FS_PATH_NOT_FOUND for a missing path', async () => {

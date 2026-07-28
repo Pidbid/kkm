@@ -45,6 +45,7 @@ import { handleProviderCommand } from './provider';
 import type { BuiltinSlashCommandName } from './registry';
 import { handleReloadCommand, handleReloadTuiCommand } from './reload';
 import { resolveSlashCommandInput, slashBusyMessage } from './resolve';
+import { findInlineSkillNames } from './skills';
 import {
   handleExportDebugZipCommand,
   handleExportMdCommand,
@@ -207,6 +208,15 @@ async function executeSlashCommand(host: SlashCommandHost, input: string): Promi
         host.showError(LLM_NOT_SET_MESSAGE);
         return;
       }
+      const inlineSkillNames = findInlineSkillNames(input, host.skillCommandMap);
+      if (inlineSkillNames.length > 1) {
+        host.track('input_command', {
+          command: 'multi-skill',
+          skill_names: inlineSkillNames,
+        });
+        host.sendNormalUserInput(input);
+        return;
+      }
       host.track('input_command', {
         command: intent.commandName,
         skill_name: intent.skillName,
@@ -264,7 +274,7 @@ async function handleBuiltInSlashCommand(
       host.showHelpPanel();
       return;
     case 'version':
-      host.showStatus(`Kimi Code v${host.state.appState.version}`);
+      host.showStatus(`KKM v${host.state.appState.version}`);
       return;
     case 'new':
       await host.createNewSession();

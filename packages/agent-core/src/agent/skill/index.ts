@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { ActivateSkillPayload } from '#/rpc';
+import type { ActivateSkillPayload, SkillActivationRequest } from '#/rpc';
 import type { ContentPart } from '@moonshot-ai/kosong';
 
 import type { Agent } from '..';
@@ -19,6 +19,37 @@ export class SkillManager {
   ) {}
 
   activate(input: ActivateSkillPayload): void {
+    const requests: readonly SkillActivationRequest[] = [
+      { name: input.name, args: input.args },
+      ...(input.additionalSkills ?? []),
+    ];
+    const activations = requests.map((request) => this.prepareActivation(request));
+
+    if (input.prompt !== undefined || requests.length > 1) {
+      if (this.agent.turn.hasActiveTurn) {
+        throw new KimiError(
+          ErrorCodes.TURN_AGENT_BUSY,
+          'Cannot activate skills while another turn is active',
+        );
+      }
+      for (const activation of activations) {
+        this.recordActivation(activation.origin);
+      }
+      this.agent.turn.prompt([
+        ...activations.flatMap((activation) => activation.content),
+        ...(input.prompt ?? []),
+      ]);
+      return;
+    }
+
+    const activation = activations[0]!;
+    this.recordActivation(activation.origin, activation.content);
+  }
+
+  private prepareActivation(input: SkillActivationRequest): {
+    readonly origin: SkillActivationOrigin;
+    readonly content: readonly ContentPart[];
+  } {
     const skill = this.registry.getSkill(input.name);
     if (skill === undefined) {
       throw new KimiError(ErrorCodes.SKILL_NOT_FOUND, `Skill "${input.name}" was not found`);
@@ -29,7 +60,7 @@ export class SkillManager {
 
     const skillArgs = input.args ?? '';
     const skillContent = this.registry.renderSkillPrompt(skill, skillArgs);
-    const wrapped = [
+    const content = [
       {
         type: 'text' as const,
         text: renderUserSlashSkillPrompt({
@@ -42,8 +73,8 @@ export class SkillManager {
       },
     ];
 
-    this.recordActivation(
-      {
+    return {
+      origin: {
         kind: 'skill_activation',
         activationId: randomUUID(),
         skillName: skill.name,
@@ -53,8 +84,8 @@ export class SkillManager {
         skillSource: skill.source,
         skillArgs: input.args,
       },
-      wrapped,
-    );
+      content,
+    };
   }
 
   recordActivation(
