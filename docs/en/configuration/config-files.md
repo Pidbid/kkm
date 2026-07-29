@@ -103,6 +103,7 @@ Fields in the config file fall into two categories: **top-level scalars** that d
 | `merge_all_available_skills` | `boolean` | `true` | Whether to merge Agent Skills from all available directories |
 | `extra_skill_dirs` | `array<string>` | — | Extra skill search directories, layered on top of the default directories |
 | `extra_agent_dirs` | `array<string>` | — | Extra custom agent search directories, layered on top of the default directories |
+| `disabled_skills` | `array<string>` | `[]` | Skill names to fully disable in Kimi (model listing, Skill tool, slash menu, and user activation). Case-insensitive. Files stay on disk. Does not block `Bash` or other tools that reimplement a skill's workflow — pair with [`permission`](#permission) deny rules when needed. See [Agent Skills](../customization/skills.md#skill-locations) |
 | `telemetry` | `boolean` | `true` | Whether anonymous telemetry is enabled; disabled only when explicitly set to `false` |
 | `providers` | `table` | `{}` | API provider table → [`providers`](#providers) |
 | `models` | `table` | — | Model alias table → [`models`](#models) |
@@ -242,6 +243,8 @@ When the experiment is enabled, the configuration is validated as the session st
 
 `max_steps_per_turn` can be overridden by the `KIMI_LOOP_MAX_STEPS_PER_TURN` environment variable, and `max_retries_per_step` by `KIMI_LOOP_MAX_RETRIES_PER_STEP`; both take higher priority than the config file.
 
+Retries only apply to transient failures — connection errors, timeouts, HTTP 429 rate limits, and 5xx server errors. A 429 caused by an exhausted quota or insufficient account balance is not retried and fails immediately, since it cannot succeed until the account is recharged.
+
 ## `background`
 
 `background` controls the concurrency behavior of background tasks (launched via the `Bash` tool or the `Agent` tool's `run_in_background=true` parameter).
@@ -354,6 +357,8 @@ api_key = "sk-xxx"
 
 Built-in tool names are listed in [Built-in tools](../reference/tools.md). Most built-in tools that accept rule arguments define their own matching subject, such as `Bash(command-pattern)` or `Read(path-pattern)`. `AgentSwarm`, MCP tools, and custom tools can only be matched by tool name — argument patterns are not supported for them.
 
+**Permission mode vs deny:** `default_permission_mode` (`manual` / `yolo` / `auto`) only changes what happens when no deny rule matches. A `decision = "deny"` rule always blocks the matching tool call, including in YOLO mode.
+
 ```toml
 [[permission.rules]]
 decision = "allow"
@@ -372,6 +377,20 @@ decision = "ask"
 pattern = "Bash"
 ```
 
+To hide a skill from the model **and** block shell helpers that reimplement it (for example after `disabled_skills`):
+
+```toml
+disabled_skills = ["review-helper", "legacy-helper"]
+
+[[permission.rules]]
+decision = "deny"
+pattern = "Bash(*review-helper-cli*)"
+
+[[permission.rules]]
+decision = "deny"
+pattern = "Bash(*legacy-helper-cli*)"
+```
+
 ::: tip
 MCP server declarations are configured in `~/.kimi-code/mcp.json` or the project-local `.kimi-code/mcp.json`, not in `config.toml`. The interactive configuration entry point is `/mcp-config`; see [Model Context Protocol](../customization/mcp.md).
 :::
@@ -388,6 +407,8 @@ Alongside `config.toml`, the CLI keeps terminal-UI and client preferences in a c
 | `[notifications].enabled` | `boolean` | `true` | Whether desktop notifications are sent |
 | `[notifications].notification_condition` | `string` | `unfocused` | When to notify: `unfocused` (only when the terminal is not focused) or `always` |
 | `[upgrade].auto_install` | `boolean` | `true` | Whether new versions are installed automatically |
+| `[status_line].items` | `string[]` | `[]` | Built-in slots to show on the first footer line and their order: `mode`, `goal`, `model`, `tasks`, `cwd`, `git`, `tips`. Unset keeps the default layout; unknown ids are skipped with a warning |
+| `[status_line].command` | `string` | `""` | Custom status line command. Its first stdout line replaces the first footer line, with a JSON snapshot (model, cwd, git branch, permission mode, plan mode, context usage, session id, version) passed on stdin. Runs are capped at 300ms and throttled to once per second; failures fall back to the built-in layout |
 
 ```toml
 # ~/.kimi-code/tui.toml
@@ -403,6 +424,10 @@ notification_condition = "unfocused" # "unfocused" | "always"
 
 [upgrade]
 auto_install = true
+
+# [status_line]
+# items = ["mode", "goal", "model", "tasks", "cwd", "git", "tips"]
+# command = "~/.kimi-code/statusline.sh"
 ```
 
 Changes apply on the next start, or immediately with `/reload-tui` (which reloads only `tui.toml`); `/reload` reloads both `config.toml` and `tui.toml`.

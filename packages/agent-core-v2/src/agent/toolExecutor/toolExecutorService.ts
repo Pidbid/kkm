@@ -30,6 +30,7 @@ import {
   type ToolArgsValidator,
 } from '#/tool/args-validator';
 import { normalizeToolArgs, type ArgCoercion } from '#/tool/args-normalize';
+import { parseToolCallArguments } from '#/tool/tool-args-parse';
 import { PathSecurityError } from '#/tool/path-access';
 import { isAbortError, isUserCancellation } from '#/_base/utils/abort';
 import { IEventBus } from '#/app/event/eventBus';
@@ -598,17 +599,13 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
     result: ToolResult,
     options: ToolExecutorExecuteOptions,
   ): Promise<ToolResult> {
-    if (call.kind === 'rejected') {
-      return result;
-    }
-
     const didCtx: ToolDidExecuteContext = {
       turnId: options.turnId,
       signal: options.signal,
       trace: options.trace,
       toolCall: call.toolCall,
       toolCalls: [call.toolCall],
-      tool: call.tool,
+      tool: call.kind === 'runnable' ? call.tool : undefined,
       args: call.args,
       result: result as ExecutableToolResult,
     };
@@ -631,7 +628,10 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
 
     const coercedResult = coerceToolResult(didCtx.result, call.toolName);
     const effectiveResult = normalizeToolResult(coercedResult);
-    const mergedNote = [call.normalizationNote, effectiveResult.note]
+    const mergedNote = [
+      call.kind === 'runnable' ? call.normalizationNote : undefined,
+      effectiveResult.note,
+    ]
       .filter((part): part is string => typeof part === 'string' && part.length > 0)
       .join('\n');
     const baseResult = {
@@ -783,24 +783,6 @@ function preflightToolCall(
         ? coercionNote(toolName, normalization.coercions)
         : undefined,
   };
-}
-
-export function parseToolCallArguments(raw: unknown): {
-  readonly data: unknown;
-  readonly parseFailed: boolean;
-  readonly error?: string;
-} {
-  if (raw === null || raw === undefined || (typeof raw === 'string' && raw.length === 0)) {
-    return { data: {}, parseFailed: false };
-  }
-  if (typeof raw !== 'string') {
-    return { data: raw, parseFailed: false };
-  }
-  try {
-    return { data: JSON.parse(raw) as unknown, parseFailed: false };
-  } catch (error) {
-    return { data: {}, parseFailed: true, error: errorMessage(error) };
-  }
 }
 
 function coercionNote(toolName: string, coercions: readonly ArgCoercion[]): string {

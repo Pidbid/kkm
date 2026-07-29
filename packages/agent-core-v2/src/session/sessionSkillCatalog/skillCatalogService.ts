@@ -13,7 +13,12 @@ import { Disposable } from '#/_base/di/lifecycle';
 import { Emitter, type Event } from '#/_base/event';
 import { LifecycleScope, ScopeActivation, registerScopedService } from '#/_base/di/scope';
 import { defineState } from '#/_base/state/stateRegistry';
+import { IConfigService } from '#/app/config/config';
 import { IBuiltinSkillSource } from '#/app/skillCatalog/builtinSkillSource';
+import {
+  DISABLED_SKILLS_SECTION,
+  type DisabledSkillsConfig,
+} from '#/app/skillCatalog/configSection';
 import { InMemorySkillCatalog } from '#/app/skillCatalog/registry';
 import type { ISkillSource, SkillContribution } from '#/app/skillCatalog/skillSource';
 import type { SkillCatalog } from '#/app/skillCatalog/types';
@@ -42,6 +47,8 @@ export class SessionSkillCatalogService
 
   private readonly sources: readonly ISkillSource[];
   private readonly sourceLoadTails = new Map<ISkillSource, Promise<void>>();
+  private readonly loadAbort = new AbortController();
+  private disposed = false;
   readonly ready: Promise<void>;
   private readonly onDidChangeEmitter = this._register(new Emitter<string>());
   readonly onDidChange: Event<string> = this.onDidChangeEmitter.event;
@@ -54,14 +61,25 @@ export class SessionSkillCatalogService
     @IExtraFileSkillSource extra: IExtraFileSkillSource,
     @IWorkspaceFileSkillSource workspace: IWorkspaceFileSkillSource,
     @IPluginSkillSource plugin: IPluginSkillSource,
+    @IConfigService private readonly config: IConfigService,
   ) {
     super();
     this.states.register(skillCatalogContributionsKey);
     this.states.register(skillCatalogMergedKey);
     this.sources = [builtin, user, explicit, extra, workspace, plugin].toSorted((a, b) => a.priority - b.priority);
     for (const s of this.sources) {
-      if (s.onDidChange) this._register(s.onDidChange(() => { void this.reloadSource(s.id); }));
+      if (s.onDidChange) {
+        this._register(s.onDidChange(() => { void this.reloadSource(s.id).catch(() => undefined); }));
+      }
     }
+    this._register(
+      this.config.onDidSectionChange((event) => {
+        if (event.domain === DISABLED_SKILLS_SECTION) {
+          this.remerge();
+          this.onDidChangeEmitter.fire(DISABLED_SKILLS_SECTION);
+        }
+      }),
+    );
     this.ready = this.loadAll();
   }
 
@@ -89,17 +107,30 @@ export class SessionSkillCatalogService
   }
 
   async reload(): Promise<void> {
+    if (this.disposed) return;
     await this.loadAll();
+    if (this.disposed) return;
     this.onDidChangeEmitter.fire('catalog');
   }
 
+  async awaitPendingReloads(): Promise<void> {
+    await this.ready;
+    // Drain in a loop so a reload enqueued while we await an earlier tail is
+    // not observed as already-settled by a single snapshot of the map.
+    while (this.sourceLoadTails.size > 0) {
+      await Promise.all(this.sourceLoadTails.values());
+    }
+  }
+
   set(id: string, c: SkillContribution, { priority }: { readonly priority: number }): void {
+    if (this.disposed) return;
     this.contributions.set(id, { c, priority });
     this.remerge();
     this.onDidChangeEmitter.fire(id);
   }
 
   remove(id: string): void {
+    if (this.disposed) return;
     this.contributions.delete(id);
     this.remerge();
     this.onDidChangeEmitter.fire(id);
@@ -107,12 +138,15 @@ export class SessionSkillCatalogService
 
   private async loadAll(): Promise<void> {
     for (const s of this.sources) {
+      if (this.disposed) return;
       await this.loadSource(s);
     }
+    if (this.disposed) return;
     this.remerge();
   }
 
   private async reloadSource(id: string): Promise<void> {
+    if (this.disposed) return;
     const s = this.sources.find((x) => x.id === id);
     if (!s) return;
     await this.loadSource(s, true);
@@ -121,7 +155,9 @@ export class SessionSkillCatalogService
   private loadSource(source: ISkillSource, fireChange = false): Promise<void> {
     const previous = this.sourceLoadTails.get(source) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(async () => {
-      const contribution = await source.load();
+      if (this.disposed) return;
+      const contribution = await source.load(this.loadAbort.signal);
+      if (this.disposed || this.loadAbort.signal.aborted) return;
       this.contributions.set(source.id, { c: contribution, priority: source.priority });
       if (fireChange) {
         this.remerge();
@@ -138,8 +174,18 @@ export class SessionSkillCatalogService
     return current;
   }
 
+  override dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.loadAbort.abort();
+    this.sourceLoadTails.clear();
+    super.dispose();
+  }
+
   private remerge(): void {
-    const m = new InMemorySkillCatalog();
+    const disabledSkills =
+      this.config.get<DisabledSkillsConfig>(DISABLED_SKILLS_SECTION) ?? [];
+    const m = new InMemorySkillCatalog({ disabledSkills });
     const ordered = [...this.contributions.values()].toSorted((a, b) => a.priority - b.priority);
     for (const { c } of ordered) {
       for (const skill of c.skills) m.register(skill, { replace: true });

@@ -1,7 +1,12 @@
 import { expandSkillParameters, skillArgumentNames } from './parser';
 import { discoverSkills, type DiscoverSkillsOptions } from './scanner';
 import type { SkillDefinition, SkillRoot, SkillSource, SkippedSkill } from './types';
-import { isInlineSkillType, normalizeSkillName } from './types';
+import {
+  createDisabledSkillNameSet,
+  isDisabledSkillName,
+  isInlineSkillType,
+  normalizeSkillName,
+} from './types';
 import type { SkillRegistry as AgentSkillRegistry } from '../agent/skill/types';
 import { escapeXmlAttr } from '../utils/xml-escape';
 
@@ -21,6 +26,8 @@ export interface SkillRegistryOptions {
   readonly discover?: typeof discoverSkills;
   readonly onWarning?: (message: string, cause?: unknown) => void;
   readonly sessionId?: string;
+  /** Skill names from config `disabled_skills` (case-insensitive). */
+  readonly disabledSkills?: readonly string[];
 }
 
 export interface SkillLoadWarning {
@@ -35,12 +42,14 @@ export class SessionSkillRegistry implements AgentSkillRegistry {
   private readonly warnings: SkillLoadWarning[] = [];
   private readonly discoverImpl: typeof discoverSkills;
   private readonly onWarning: (message: string, cause?: unknown) => void;
+  private readonly disabledSkills: ReadonlySet<string>;
   readonly sessionId?: string;
 
   constructor(options: SkillRegistryOptions = {}) {
     this.discoverImpl = options.discover ?? discoverSkills;
     this.onWarning = options.onWarning ?? (() => {});
     this.sessionId = options.sessionId;
+    this.disabledSkills = createDisabledSkillNameSet(options.disabledSkills);
   }
 
   async loadRoots(roots: readonly SkillRoot[]): Promise<void> {
@@ -114,8 +123,14 @@ export class SessionSkillRegistry implements AgentSkillRegistry {
     );
   }
 
+  isSkillDisabled(name: string): boolean {
+    return isDisabledSkillName(name, this.disabledSkills);
+  }
+
   listSkills(): readonly SkillDefinition[] {
-    return [...this.byName.values()].toSorted((a, b) => a.name.localeCompare(b.name));
+    return [...this.byName.values()]
+      .filter((skill) => !this.isSkillDisabled(skill.name))
+      .toSorted((a, b) => a.name.localeCompare(b.name));
   }
 
   listInvocableSkills(): readonly SkillDefinition[] {
@@ -152,6 +167,20 @@ export class SessionSkillRegistry implements AgentSkillRegistry {
       lines.push(listing);
     }
     return lines.length === 1 ? '' : lines.join('\n');
+  }
+
+  /**
+   * Per-skill rendering of {@link getModelSkillListing}'s selection (invocable,
+   * non-sub-skills), for per-skill token attribution in the `/context` report.
+   */
+  getModelSkillListingEntries(): readonly { name: string; source: SkillSource; text: string }[] {
+    return this.listInvocableSkills()
+      .filter((skill) => skill.metadata.isSubSkill !== true)
+      .map((skill) => ({
+        name: skill.name,
+        source: skill.source,
+        text: formatModelSkill(skill).join('\n'),
+      }));
   }
 }
 

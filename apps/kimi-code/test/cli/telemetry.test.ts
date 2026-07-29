@@ -29,10 +29,16 @@ vi.mock('@moonshot-ai/kimi-telemetry', () => ({
   withTelemetryContext: vi.fn(),
 }));
 
-vi.mock('@moonshot-ai/kimi-code-oauth', () => ({
-  createKimiDeviceId: mocks.createKimiDeviceId,
-  KIMI_CODE_PROVIDER_NAME: 'managed:kimi-code',
-}));
+vi.mock('@moonshot-ai/kimi-code-oauth', async (importOriginal) => {
+  // Spread the real module: the SDK's v2 client pulls agent-core-v2 into the
+  // import graph, which subclasses KimiOAuthToolkit from this package.
+  const actual = await importOriginal<typeof import('@moonshot-ai/kimi-code-oauth')>();
+  return {
+    ...actual,
+    createKimiDeviceId: mocks.createKimiDeviceId,
+    KIMI_CODE_PROVIDER_NAME: 'managed:kimi-code',
+  };
+});
 
 vi.mock('@moonshot-ai/kimi-code-sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@moonshot-ai/kimi-code-sdk')>();
@@ -109,5 +115,92 @@ describe('initializeServerTelemetry', () => {
     expect(mocks.initializeTelemetry).toHaveBeenCalledWith(
       expect.objectContaining({ enabled: true, model: undefined }),
     );
+  });
+});
+
+describe('telemetry shutdown deadline', () => {
+  it('gives each pipeline only the budget remaining from one deadline', async () => {
+    const { createTelemetryShutdownDeadline } = await import(
+      '#/cli/telemetry-shutdown'
+    );
+    let nowMs = 1_000;
+    const observedBudgets: number[] = [];
+    const deadline = createTelemetryShutdownDeadline(
+      3_000,
+      vi.fn(),
+      () => nowMs,
+    );
+
+    await deadline.run(async (remainingMs) => {
+      observedBudgets.push(remainingMs);
+      nowMs = 2_250;
+    });
+    await deadline.run(async (remainingMs) => {
+      observedBudgets.push(remainingMs);
+    });
+
+    expect(observedBudgets).toEqual([3_000, 1_750]);
+  });
+
+  it('still invokes a later pipeline with no budget after the deadline expires', async () => {
+    const { createTelemetryShutdownDeadline } = await import(
+      '#/cli/telemetry-shutdown'
+    );
+    let nowMs = 1_000;
+    const pipeline = vi.fn(async (_remainingMs: number) => {});
+    const deadline = createTelemetryShutdownDeadline(
+      3_000,
+      vi.fn(),
+      () => nowMs,
+    );
+    nowMs = 4_001;
+
+    await deadline.run(pipeline);
+
+    expect(pipeline).toHaveBeenCalledWith(0);
+  });
+
+  it('continues to a later pipeline after an earlier one rejects', async () => {
+    const { createTelemetryShutdownDeadline } = await import(
+      '#/cli/telemetry-shutdown'
+    );
+    const laterPipeline = vi.fn(async (_remainingMs: number) => {});
+    const reportError = vi.fn();
+    const deadline = createTelemetryShutdownDeadline(
+      3_000,
+      reportError,
+      () => 1_000,
+    );
+
+    await expect(
+      deadline.run(async () => {
+        throw new Error('telemetry unavailable');
+      }),
+    ).resolves.toBeUndefined();
+    await deadline.run(laterPipeline);
+
+    expect(laterPipeline).toHaveBeenCalledOnce();
+    expect(reportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'telemetry unavailable' }),
+    );
+  });
+
+  it('continues to a later pipeline when the error reporter also throws', async () => {
+    const { createTelemetryShutdownDeadline } = await import(
+      '#/cli/telemetry-shutdown'
+    );
+    const laterPipeline = vi.fn(async (_remainingMs: number) => {});
+    const deadline = createTelemetryShutdownDeadline(3_000, () => {
+      throw new Error('stderr unavailable');
+    });
+
+    await expect(
+      deadline.run(async () => {
+        throw new Error('telemetry unavailable');
+      }),
+    ).resolves.toBeUndefined();
+    await deadline.run(laterPipeline);
+
+    expect(laterPipeline).toHaveBeenCalledOnce();
   });
 });

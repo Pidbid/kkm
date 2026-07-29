@@ -1,5 +1,5 @@
 {
-  description = "Kimi Code CLI";
+  description = "KKM CLI";
 
   inputs = {
     # Pinned to the 25.11 release channel because nixpkgs-unstable currently
@@ -42,7 +42,7 @@
           node
         else
           throw ''
-            Kimi Code requires Node.js >= ${minNodeVersion},
+            KKM requires Node.js >= ${minNodeVersion},
             but nixpkgs only offers ${node.version}.
             Pin a newer nixpkgs revision or update minNodeVersion in flake.nix.
           '';
@@ -77,6 +77,7 @@
         ./packages/protocol
         ./packages/telemetry
         ./packages/transcript
+        ./packages/tree-sitter-bash
         ./apps/kimi-code
         ./apps/vscode
         ./apps/kimi-inspect
@@ -103,6 +104,7 @@
         "@moonshot-ai/protocol"
         "@moonshot-ai/kimi-telemetry"
         "@moonshot-ai/transcript"
+        "@moonshot-ai/tree-sitter-bash"
         "@moonshot-ai/kimi-code"
         "kimi-code"
         "@moonshot-ai/kimi-inspect"
@@ -130,10 +132,10 @@
             else if pkgs.stdenv.hostPlatform.isDarwin then
               "darwin-x64"
             else
-              throw "Unsupported Kimi Code native target for ${pkgs.stdenv.hostPlatform.system}";
+              throw "Unsupported KKM native target for ${pkgs.stdenv.hostPlatform.system}";
 
           kimi-code = pkgs.stdenv.mkDerivation (finalAttrs: {
-            pname = "kimi-code";
+            pname = "kkm";
             version = appPackageJson.version;
 
             src = lib.fileset.toSource {
@@ -160,7 +162,7 @@
               inherit (finalAttrs) pname version src pnpmWorkspaces;
               inherit pnpm;
               fetcherVersion = 3;
-              hash = "sha256-k2McTzqvLoSzXQwwHJYdzA4prhJUlOa4JKbDektSHiA=";
+              hash = "sha256-bL1AaInlb8dE+ua7a6llvQWkibEwEzfI3oQW5IOpX6I=";
             };
 
             nativeBuildInputs = [
@@ -211,21 +213,21 @@
               runHook preInstall
 
               install -Dm755 \
-                "apps/kimi-code/dist-native/bin/${nativeTarget}/kimi" \
-                "$out/bin/kimi"
+                "apps/kimi-code/dist-native/bin/${nativeTarget}/kkm" \
+                "$out/bin/kkm"
 
               runHook postInstall
             '';
 
             postInstall = ''
-              wrapProgram $out/bin/kimi --prefix PATH : ${lib.makeBinPath [ pkgs.ripgrep pkgs.fd ]}
+              wrapProgram $out/bin/kkm --prefix PATH : ${lib.makeBinPath [ pkgs.ripgrep pkgs.fd ]}
             '';
 
             meta = {
-              description = "Kimi Code CLI";
-              homepage = "https://github.com/MoonshotAI/kimi-code";
+              description = "KKM CLI";
+              homepage = "https://github.com/Pidbid/kkm";
               license = lib.licenses.mit;
-              mainProgram = "kimi";
+              mainProgram = "kkm";
               platforms = systems;
             };
           });
@@ -239,7 +241,7 @@
       apps = forAllSystems (pkgs: {
         kimi-code = {
           type = "app";
-          program = "${self.packages.${pkgs.system}.kimi-code}/bin/kimi";
+          program = "${self.packages.${pkgs.system}.kimi-code}/bin/kkm";
         };
         default = self.apps.${pkgs.system}.kimi-code;
       });

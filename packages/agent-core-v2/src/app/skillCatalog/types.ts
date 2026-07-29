@@ -46,15 +46,33 @@ export interface SkillPluginContext {
   readonly instructions?: string;
 }
 
+export type SkillResolution =
+  | {
+      readonly kind: 'resolved';
+      readonly skill: SkillDefinition;
+      readonly canonicalName: string;
+    }
+  | { readonly kind: 'not-found' }
+  | {
+      readonly kind: 'ambiguous';
+      readonly candidates: readonly string[];
+    };
+
 export interface SkippedSkill {
   readonly path: string;
   readonly type: string;
   readonly reason: string;
 }
 
+export interface ModelSkillDisclosure {
+  readonly names: readonly string[];
+  readonly listing: string;
+}
+
 export interface SkillCatalog {
   getSkill(name: string): SkillDefinition | undefined;
   getPluginSkill(pluginId: string, name: string): SkillDefinition | undefined;
+  resolveSkill(name: string): SkillResolution;
   renderSkillPrompt(
     skill: SkillDefinition,
     rawArgs: string,
@@ -64,11 +82,40 @@ export interface SkillCatalog {
   listInvocableSkills(): readonly SkillDefinition[];
   getSkillRoots(): readonly string[];
   getSkippedByPolicy(): readonly SkippedSkill[];
+  getModelSkillDisclosure(): ModelSkillDisclosure;
   getModelSkillListing(): string;
+  isSkillDisabled(name: string): boolean;
 }
 
 export function normalizeSkillName(name: string): string {
   return name.toLowerCase();
+}
+
+export function createDisabledSkillNameSet(
+  names: readonly string[] | undefined,
+): ReadonlySet<string> {
+  const set = new Set<string>();
+  if (names === undefined) return set;
+  for (const name of names) {
+    const normalized = normalizeSkillName(name.trim());
+    if (normalized.length > 0) set.add(normalized);
+  }
+  return set;
+}
+
+export function isDisabledSkillName(name: string, disabled: ReadonlySet<string>): boolean {
+  return disabled.has(normalizeSkillName(name));
+}
+
+export function canonicalSkillName(skill: SkillDefinition): string {
+  return skill.plugin === undefined ? skill.name : `${skill.plugin.id}:${skill.name}`;
+}
+
+export function formatAmbiguousSkillMessage(
+  name: string,
+  candidates: readonly string[],
+): string {
+  return `Skill "${name}" is ambiguous. Use one of these qualified names: ${candidates.map((candidate) => `"${candidate}"`).join(', ')}.`;
 }
 
 export function isInlineSkillType(type: string | undefined): boolean {

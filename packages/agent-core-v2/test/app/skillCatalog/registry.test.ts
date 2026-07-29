@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { InMemorySkillCatalog } from '#/app/skillCatalog/registry';
-import type { SkillDefinition, SkillSource } from '#/app/skillCatalog/types';
+import {
+  canonicalSkillName,
+  type SkillDefinition,
+  type SkillSource,
+} from '#/app/skillCatalog/types';
 import { stubSkill } from './stubs';
 
 describe('InMemorySkillCatalog skill listing', () => {
@@ -92,6 +96,20 @@ describe('InMemorySkillCatalog skill listing', () => {
     expect(rendered).not.toContain('builtin version');
   });
 
+  it('lists every plugin identity alongside the merged non-plugin winner', () => {
+    const registry = makeRegistry([
+      makeSkill('review', 'extra', 'Alpha review', undefined, {}, { id: 'alpha' }),
+      makeSkill('review', 'extra', 'Beta review', undefined, {}, { id: 'beta' }),
+    ]);
+    registry.register(makeSkill('review', 'project', 'Project review'), { replace: true });
+
+    expect(registry.listSkills().map(canonicalSkillName)).toEqual([
+      'alpha:review',
+      'beta:review',
+      'review',
+    ]);
+  });
+
   it('registerBuiltinSkill stamps non-builtin skills as builtin', () => {
     const registry = new InMemorySkillCatalog();
     registry.registerBuiltinSkill(makeSkill('theme', 'user'));
@@ -101,6 +119,26 @@ describe('InMemorySkillCatalog skill listing', () => {
       source: 'builtin',
     });
     expect(sectionFor(registry.getKimiSkillsDescription(), '### Built-in')).toContain('theme');
+  });
+});
+
+describe('InMemorySkillCatalog disabled_skills filter', () => {
+  it('hides disabled skill names from public lists while keeping getSkill', () => {
+    const registry = new InMemorySkillCatalog({
+      disabledSkills: ['Review-Helper', ' legacy-helper '],
+    });
+    registry.register(makeSkill('review-helper', 'user', 'Review helper'));
+    registry.register(makeSkill('legacy-helper', 'user', 'Legacy helper'));
+    registry.register(makeSkill('keep-me', 'user', 'Still available'));
+
+    expect(registry.isSkillDisabled('review-helper')).toBe(true);
+    expect(registry.isSkillDisabled('LEGACY-HELPER')).toBe(true);
+    expect(registry.listSkills().map((skill) => skill.name)).toEqual(['keep-me']);
+    expect(registry.listInvocableSkills().map((skill) => skill.name)).toEqual(['keep-me']);
+    expect(registry.getModelSkillListing()).toContain('keep-me');
+    expect(registry.getModelSkillListing()).not.toContain('review-helper');
+    expect(registry.getModelSkillListing()).not.toContain('legacy-helper');
+    expect(registry.getSkill('review-helper')?.name).toBe('review-helper');
   });
 });
 
@@ -127,6 +165,19 @@ describe('InMemorySkillCatalog model skill listing', () => {
     expect(rendered).not.toContain('private');
     expect(rendered).not.toContain('flow-only');
     expect(rendered).not.toContain('sub-step');
+  });
+
+  it('lists every plugin skill by its canonical invocation name', () => {
+    const registry = makeRegistry([
+      makeSkill('review', 'extra', 'Alpha review', undefined, { type: 'prompt' }, { id: 'alpha' }),
+      makeSkill('review', 'extra', 'Beta review', undefined, { type: 'prompt' }, { id: 'beta' }),
+    ]);
+
+    const rendered = registry.getModelSkillListing();
+
+    expect(rendered).toContain('- alpha:review: Alpha review');
+    expect(rendered).toContain('- beta:review: Beta review');
+    expect(rendered).not.toContain('\n- review:');
   });
 
   it('returns an empty string when no skills are model-invocable', () => {
@@ -357,6 +408,57 @@ describe('InMemorySkillCatalog plugin lookup', () => {
     expect(registry.getSkill('review')).toMatchObject({ description: 'second' });
     expect(registry.getPluginSkill('superpowers', 'review')).toMatchObject({
       description: 'second',
+    });
+  });
+
+  it('resolves a plugin-qualified name to the selected plugin skill', () => {
+    const registry = makeRegistry([
+      makeSkill('review', 'extra', 'Alpha review', undefined, {}, { id: 'alpha' }),
+      makeSkill('review', 'extra', 'Beta review', undefined, {}, { id: 'beta' }),
+    ]);
+
+    expect(registry.resolveSkill('beta:review')).toMatchObject({
+      kind: 'resolved',
+      canonicalName: 'beta:review',
+      skill: { description: 'Beta review', plugin: { id: 'beta' } },
+    });
+  });
+
+  it('keeps a bare plugin skill name as an alias when it has one candidate', () => {
+    const registry = makeRegistry([
+      makeSkill('review', 'extra', 'Plugin review', undefined, {}, { id: 'alpha' }),
+    ]);
+
+    expect(registry.resolveSkill('review')).toMatchObject({
+      kind: 'resolved',
+      canonicalName: 'alpha:review',
+      skill: { description: 'Plugin review' },
+    });
+  });
+
+  it('reports every qualified candidate for an ambiguous bare plugin skill name', () => {
+    const registry = makeRegistry([
+      makeSkill('review', 'extra', 'Beta review', undefined, {}, { id: 'beta' }),
+      makeSkill('review', 'extra', 'Alpha review', undefined, {}, { id: 'alpha' }),
+    ]);
+
+    expect(registry.resolveSkill('review')).toEqual({
+      kind: 'ambiguous',
+      candidates: ['alpha:review', 'beta:review'],
+    });
+  });
+
+  it('keeps the merged non-plugin winner available by its bare name', () => {
+    const registry = makeRegistry([
+      makeSkill('review', 'extra', 'Alpha review', undefined, {}, { id: 'alpha' }),
+      makeSkill('review', 'extra', 'Beta review', undefined, {}, { id: 'beta' }),
+    ]);
+    registry.register(makeSkill('review', 'project', 'Project review'), { replace: true });
+
+    expect(registry.resolveSkill('review')).toMatchObject({
+      kind: 'resolved',
+      canonicalName: 'review',
+      skill: { description: 'Project review', source: 'project' },
     });
   });
 });

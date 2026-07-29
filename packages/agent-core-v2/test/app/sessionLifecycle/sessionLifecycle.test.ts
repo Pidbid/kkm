@@ -141,17 +141,21 @@ function skillCatalogStub(): ISessionSkillCatalog {
     catalog: {
       getSkill: () => undefined,
       getPluginSkill: () => undefined,
+      resolveSkill: () => ({ kind: 'not-found' }),
       renderSkillPrompt: () => '',
       listSkills: () => [],
       listInvocableSkills: () => [],
       getSkillRoots: () => [],
       getSkippedByPolicy: () => [],
+      getModelSkillDisclosure: () => ({ names: [], listing: '' }),
       getModelSkillListing: () => '',
+      isSkillDisabled: () => false,
     },
     ready: Promise.resolve(),
     onDidChange: () => ({ dispose: () => {} }),
     load: () => Promise.resolve(),
     reload: () => Promise.resolve(),
+    awaitPendingReloads: () => Promise.resolve(),
   };
 }
 

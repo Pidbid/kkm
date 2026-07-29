@@ -37,7 +37,7 @@ import {
   showSettingsSelector,
 } from './config';
 import { handleGoalCommand } from './goal';
-import { handleFeedbackCommand, showMcpServers, showStatusReport, showUsage } from './info';
+import { handleFeedbackCommand, showContextReport, showMcpServers, showStatusReport, showUsage } from './info';
 import { handleAddDirCommand } from './add-dir';
 import { parseSlashInput } from './parse';
 import { handlePluginsCommand } from './plugins';
@@ -80,7 +80,7 @@ export {
   showSettingsSelector,
 } from './config';
 export { handleSwarmCommand } from './swarm';
-export { handleFeedbackCommand, showMcpServers, showStatusReport, showUsage } from './info';
+export { handleFeedbackCommand, showContextReport, showMcpServers, showStatusReport, showUsage } from './info';
 export { handlePluginsCommand } from './plugins';
 export { handleReloadCommand, handleReloadTuiCommand } from './reload';
 export { handleGoalCommand } from './goal';
@@ -116,6 +116,7 @@ export interface SlashCommandHost {
   restoreEditor(): void;
   restoreInputText(text: string): void;
   refreshSlashCommandAutocomplete(): void;
+  refreshTerminalMouseTracking(): void;
 
   // Session
   requireSession(): Session;
@@ -327,6 +328,9 @@ async function handleBuiltInSlashCommand(
       return;
     case 'usage':
       void showUsage(host);
+      return;
+    case 'context':
+      void showContextReport(host);
       return;
     case 'status':
       void showStatusReport(host);

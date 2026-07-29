@@ -51,13 +51,14 @@
  * (`packages/agent-core/src/services/skill/skill.ts`): only
  * `name`/`description`/`path`/`source` plus optional `type` and
  * `disable_model_invocation` are emitted; `isSubSkill` is intentionally
- * dropped.
+ * dropped. Plugin Skill names use their canonical `pluginId:skillName`
+ * identity so every listed name round-trips through the activation route.
  *
  * **Error mapping**:
  *   - unknown workspace id          → envelope `code: 40410 workspace.not_found`.
  *   - not live / unknown session    → envelope `code: 40401 session.not_found` (see gate above).
  *   - `skill.not_found` / `skill.name_empty` → envelope `code: 40415 skill.not_found`.
- *   - `skill.type_unsupported`      → envelope `code: 40912 skill.not_activatable`.
+ *   - `skill.type_unsupported` / `skill.disabled` → envelope `code: 40912 skill.not_activatable`.
  *   - malformed `{tail}` (bad action, bare)  → envelope `code: 40001 validation.failed`.
  *   - other errors → 50001 via the global `installErrorHandler`.
  *
@@ -70,6 +71,7 @@
 
 import {
   BUILTIN_SKILLS,
+  DISABLED_SKILLS_SECTION,
   ErrorCodes,
   EXTRA_SKILL_DIRS_SECTION,
   IAgentSkillService,
@@ -89,10 +91,12 @@ import {
   MERGE_ALL_AVAILABLE_SKILLS_SECTION,
   SKILL_SOURCE_PRIORITY,
   applyPromptMetadataUpdate,
+  canonicalSkillName,
   configuredRoots,
   projectRoots,
   promptMetadataTextFromSkill,
   userRoots,
+  type DisabledSkillsConfig,
   type ISessionScopeHandle,
   type Scope,
   type SkillDefinition,
@@ -195,7 +199,7 @@ export function registerSkillsRoutes(app: SkillsRouteHost, core: Scope): void {
         return;
       }
       const catalog = resolved.handle.accessor.get(ISessionSkillCatalog);
-      await catalog.ready;
+      await catalog.awaitPendingReloads();
       const skills = catalog.catalog.listSkills().map(toProtocolSkill);
       reply.send(okEnvelope({ skills }, req.id));
     },
@@ -343,6 +347,7 @@ async function listWorkspaceSkillsForRoot(
   await config.ready;
   const runtimeOptions = core.accessor.get(ISkillCatalogRuntimeOptions);
   const extraSkillDirs = config.get<ExtraSkillDirsConfig>(EXTRA_SKILL_DIRS_SECTION) ?? [];
+  const disabledSkills = config.get<DisabledSkillsConfig>(DISABLED_SKILLS_SECTION) ?? [];
   const mergeAllAvailableSkills =
     config.get<MergeAllAvailableSkillsConfig>(MERGE_ALL_AVAILABLE_SKILLS_SECTION) ?? true;
   const explicitDirs = runtimeOptions.explicitDirs ?? [];
@@ -366,7 +371,9 @@ async function listWorkspaceSkillsForRoot(
     discovery.discover(pluginRootList),
   ]);
 
-  const catalog = new InMemorySkillCatalog();
+  // Match the session catalog: honor top-level `disabled_skills` so workspace
+  // previews (e.g. web onboarding slash menu) do not surface denylisted names.
+  const catalog = new InMemorySkillCatalog({ disabledSkills });
   const ordered = [
     { skills: BUILTIN_SKILLS, priority: SKILL_SOURCE_PRIORITY.builtin },
     { skills: plugin.skills, priority: SKILL_SOURCE_PRIORITY.plugin },
@@ -389,7 +396,7 @@ type SkillElement = ReturnType<ISessionSkillCatalog['catalog']['listSkills']>[nu
 
 function toProtocolSkill(skill: SkillElement): SkillDescriptor {
   const base: SkillDescriptor = {
-    name: skill.name,
+    name: canonicalSkillName(skill),
     description: skill.description,
     path: skill.path,
     source: skill.source,
@@ -421,6 +428,7 @@ function sendMappedError(
         reply.send(errEnvelope(ErrorCode.SKILL_NOT_FOUND, err.message, requestId, err.stack));
         return;
       case ErrorCodes.SKILL_TYPE_UNSUPPORTED:
+      case ErrorCodes.SKILL_DISABLED:
         reply.send(errEnvelope(ErrorCode.SKILL_NOT_ACTIVATABLE, err.message, requestId, err.stack));
         return;
     }

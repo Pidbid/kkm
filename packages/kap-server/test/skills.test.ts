@@ -10,6 +10,8 @@
  *   - GET  on an unknown workspace                        → 40410
  *   - POST /api/v1/sessions/{sid}/skills/{name}:activate   → {activated:true, skill_name}
  *   - POST :activate an unknown skill                      → 40415
+ *   - POST :activate a disabled skill                      → 40912
+ *   - GET  workspace/session listings honor disabled_skills
  *   - POST bare `{name}` / bogus action                    → 40001
  *
  * Session skills are resolved from the per-session `ISessionSkillCatalog` (list)
@@ -27,6 +29,7 @@ import { join } from 'node:path';
 
 import {
   IAgentLifecycleService,
+  IPluginService,
   ISessionLifecycleService,
   ISkillCatalogRuntimeOptions,
 } from '@moonshot-ai/agent-core-v2';
@@ -149,6 +152,39 @@ describe('server-v2 /api/v1 skills', () => {
     );
   }
 
+  /** Restart the in-process server with top-level disabled_skills in config.toml. */
+  async function restartWithDisabledSkills(names: readonly string[]): Promise<void> {
+    await writeFile(
+      join(home as string, 'config.toml'),
+      `disabled_skills = ${JSON.stringify([...names])}\n`,
+      'utf-8',
+    );
+    await server!.close();
+    server = undefined;
+    server = await startServer({
+      host: '127.0.0.1',
+      port: 0,
+      homeDir: home,
+      logLevel: 'silent',
+    });
+    base = `http://127.0.0.1:${server.port}`;
+  }
+
+  async function seedPluginSkill(pluginId: string, name: string): Promise<string> {
+    const root = await makeWorkspaceDir();
+    const dir = join(root, 'skills', name);
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(root, 'kimi.plugin.json'),
+      JSON.stringify({ name: pluginId, skills: './skills/' }),
+    );
+    await writeFile(
+      join(dir, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: ${pluginId} ${name}\n---\n\nPlugin skill body.\n`,
+    );
+    return root;
+  }
+
   describe('GET /api/v1/sessions/{sid}/skills', () => {
     it('returns 40401 for an unknown session', async () => {
       const { body } = await getJson<null>('/api/v1/sessions/nope/skills');
@@ -199,6 +235,34 @@ describe('server-v2 /api/v1 skills', () => {
       expect(docsSkill).toMatchObject({ source: 'builtin' });
       expect(docsSkill?.description.length).toBeGreaterThan(0);
     });
+
+    it('lists colliding plugin skills under names that round-trip through activation', async () => {
+      const plugins = server!.core.accessor.get(IPluginService);
+      await plugins.installPlugin({ source: await seedPluginSkill('alpha-plugin', 'review') });
+      await plugins.installPlugin({ source: await seedPluginSkill('beta-plugin', 'review') });
+      const id = await createSession();
+      await createMainAgent(id);
+
+      const { body: listed } = await getJson<{ skills: SkillWire[] }>(
+        `/api/v1/sessions/${id}/skills`,
+      );
+      const names = listSkillsResponseSchema
+        .parse(listed.data)
+        .skills.map((skill) => skill.name)
+        .filter((name) => name.endsWith(':review'));
+      const selected = 'beta-plugin:review';
+      expect(names).toEqual(['alpha-plugin:review', selected]);
+
+      const { body: activated } = await postJson<{
+        activated: boolean;
+        skill_name: string;
+      }>(`/api/v1/sessions/${id}/skills/${encodeURIComponent(selected)}:activate`);
+      expect(activated.code).toBe(0);
+      expect(activateSkillResultSchema.parse(activated.data)).toEqual({
+        activated: true,
+        skill_name: selected,
+      });
+    });
   });
 
   describe('POST /api/v1/sessions/{sid}/skills/{name}:activate', () => {
@@ -240,6 +304,21 @@ describe('server-v2 /api/v1 skills', () => {
         `/api/v1/sessions/${id}/skills/does-not-exist:activate`,
       );
       expect(body.code).toBe(40415);
+    });
+
+    it('returns 40912 when activating a skill listed in disabled_skills', async () => {
+      const workspaceDir = await makeWorkspaceDir();
+      await seedProjectSkill(workspaceDir, 'e2e-disabled');
+      await restartWithDisabledSkills(['e2e-disabled']);
+
+      const id = await createSession(workspaceDir);
+      await createMainAgent(id);
+
+      const { body } = await postJson<null>(
+        `/api/v1/sessions/${id}/skills/e2e-disabled:activate`,
+      );
+      expect(body.code).toBe(40912);
+      expect(body.msg).toMatch(/disabled/i);
     });
 
     it('returns 40401 for an unknown session', async () => {
@@ -296,6 +375,27 @@ describe('server-v2 /api/v1 skills', () => {
       const sessSkills = listSkillsResponseSchema.parse(sessRes.body.data).skills;
       const names = (xs: readonly { name: string }[]) => xs.map((s) => s.name).toSorted();
       expect(names(wsSkills)).toEqual(names(sessSkills));
+    });
+
+    it('omits disabled_skills from both workspace and session listings', async () => {
+      const workspaceDir = await makeWorkspaceDir();
+      await seedProjectSkill(workspaceDir, 'e2e-keep');
+      await seedProjectSkill(workspaceDir, 'e2e-hidden');
+      await restartWithDisabledSkills(['e2e-hidden']);
+
+      const wid = await registerWorkspace(workspaceDir);
+      const sid = await createSession(workspaceDir);
+
+      const [wsRes, sessRes] = await Promise.all([
+        getJson<{ skills: SkillWire[] }>(`/api/v1/workspaces/${wid}/skills`),
+        getJson<{ skills: SkillWire[] }>(`/api/v1/sessions/${sid}/skills`),
+      ]);
+      const wsSkills = listSkillsResponseSchema.parse(wsRes.body.data).skills;
+      const sessSkills = listSkillsResponseSchema.parse(sessRes.body.data).skills;
+      expect(wsSkills.some((s) => s.name === 'e2e-keep')).toBe(true);
+      expect(wsSkills.some((s) => s.name === 'e2e-hidden')).toBe(false);
+      expect(sessSkills.some((s) => s.name === 'e2e-keep')).toBe(true);
+      expect(sessSkills.some((s) => s.name === 'e2e-hidden')).toBe(false);
     });
 
     it('honors explicit skill dirs in workspace preview', async () => {

@@ -17,6 +17,7 @@ import { Event } from '#/_base/event';
 import { type McpServerConfig } from '#/agent/mcp/config-schema';
 import { IAgentProfileService } from '#/agent/profile/profile';
 import '#/agent/profile/profileService';
+import '#/agent/skillDisclosure/skillDisclosureService';
 import { IAgentMcpService } from '#/agent/mcp/mcp';
 import { McpConnectionManager } from '#/agent/mcp/connection-manager';
 import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
@@ -315,7 +316,9 @@ describe('AgentLifecycleService', () => {
     } as unknown as ISessionAgentProfileCatalog);
     ix.stub(ISessionSkillCatalog, {
       _serviceBrand: undefined,
-      catalog: { skills: [] },
+      catalog: {
+        getModelSkillDisclosure: () => ({ names: [], listing: '' }),
+      },
       ready: Promise.resolve(),
       onDidChange: Event.None,
       load: () => Promise.resolve(),
@@ -772,6 +775,7 @@ describe('AgentLifecycleService', () => {
       systemPrompt: 'original prompt',
       activeToolNames: ['Read'],
       disallowedTools: ['Bash'],
+      disclosedSkillNames: ['review'],
       subagents: ['explore'],
     });
 
@@ -784,8 +788,55 @@ describe('AgentLifecycleService', () => {
       systemPrompt: 'original prompt',
       activeToolNames: ['Read'],
       disallowedTools: ['Bash'],
+      disclosedSkillNames: ['review'],
       subagents: ['explore'],
     });
+  });
+
+  it('fork waits for a cwd prompt refresh before returning the child', async () => {
+    const svc = ix.get(IAgentLifecycleService);
+    const source = await svc.create({ agentId: 'main' });
+    source.accessor.get(IAgentProfileService).applyBindingSnapshot({
+      cwd: '/work',
+      profileName: 'deleted-profile',
+      thinkingLevel: 'high',
+      systemPrompt: 'original prompt',
+    });
+    let markRefreshStarted!: () => void;
+    const refreshStarted = new Promise<void>((resolve) => {
+      markRefreshStarted = resolve;
+    });
+    let releaseRefresh!: () => void;
+    const refreshFinished = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    disposables.add(
+      svc.onDidCreate((handle) => {
+        if (handle.id !== 'forked') return;
+        vi.spyOn(handle.accessor.get(IAgentProfileService), 'refreshSystemPrompt')
+          .mockImplementation(() => {
+            markRefreshStarted();
+            return refreshFinished;
+          });
+      }),
+    );
+
+    let settled = false;
+    const forked = svc.fork('main', {
+      agentId: 'forked',
+      binding: { cwd: '/next-work' },
+    }).then((handle) => {
+      settled = true;
+      return handle;
+    });
+
+    await refreshStarted;
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    releaseRefresh();
+    const child = await forked;
+    expect(child.accessor.get(IAgentProfileService).data().cwd).toBe('/next-work');
   });
 
   it('run throws when the agent does not exist', () => {

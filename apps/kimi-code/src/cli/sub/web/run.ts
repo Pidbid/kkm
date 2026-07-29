@@ -8,10 +8,15 @@
  * `startServer`).
  */
 
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { hostRequestHeadersSeed } from '@moonshot-ai/agent-core-v2';
-import { createServerLogger, startServer, type ServerLogger } from '@moonshot-ai/kap-server';
+import {
+  createServerLogger,
+  startServer,
+  type ServerLogger,
+} from '@moonshot-ai/kap-server';
 import { shutdownTelemetry, track } from '@moonshot-ai/kimi-telemetry';
 import chalk from 'chalk';
 import { type Command } from 'commander';
@@ -23,6 +28,7 @@ import { openUrl as defaultOpenUrl } from '#/utils/open-url';
 import { getDataDir } from '#/utils/paths';
 
 import { initializeServerTelemetry } from '../../telemetry';
+import { createTelemetryShutdownDeadline } from '../../telemetry-shutdown';
 import {
   buildKimiDefaultHeaders,
   getHostPackageRoot,
@@ -57,7 +63,7 @@ const WEB_ASSETS_DIR = 'dist-web';
 interface RoutedServer {
   readonly address: string;
   readonly logger: ServerLogger;
-  close(): Promise<void>;
+  close(options?: { readonly telemetryDeadlineMs?: number }): Promise<void>;
 }
 
 export interface WebCliOptions extends ServerCliOptions {
@@ -249,15 +255,23 @@ async function runServerInProcess(
     if (stopping) return;
     stopping = true;
     running?.logger.info({ reason }, 'server shutting down');
-    try {
-      await running?.close();
-      await shutdownTelemetry({ timeoutMs: CLI_SHUTDOWN_TIMEOUT_MS });
-    } catch (error) {
-      running?.logger.error(
-        { err: error instanceof Error ? error : new Error(String(error)) },
-        'server shutdown error',
-      );
-    }
+    const telemetryDeadline = createTelemetryShutdownDeadline(
+      CLI_SHUTDOWN_TIMEOUT_MS,
+      (error) => {
+        running?.logger.error(
+          { err: error instanceof Error ? error : new Error(String(error)) },
+          'telemetry shutdown error',
+        );
+      },
+    );
+    await telemetryDeadline.run(async () =>
+      running?.close({
+        telemetryDeadlineMs: telemetryDeadline.expiresAtMs,
+      }),
+    );
+    await telemetryDeadline.run((remainingMs) =>
+      shutdownTelemetry({ timeoutMs: remainingMs }),
+    );
     process.exit(0);
   }
 
@@ -266,6 +280,12 @@ async function runServerInProcess(
   // logger, close }`, so adapt it to the `RoutedServer` surface the rest of
   // this runner consumes.
   const logger = createServerLogger({ level: options.logLevel });
+  const webAssetsDir = serverWebAssetsDir();
+  if (webAssetsDir === undefined) {
+    logger.info(
+      'dev mode: web assets not built; starting the API server without the web UI',
+    );
+  }
   const v2 = await startServer({
     host: options.host,
     port: options.port,
@@ -288,13 +308,13 @@ async function runServerInProcess(
     // requests (model, WebSearch, FetchURL) carry the same User-Agent +
     // X-Msh-* identity as direct CLI runs.
     seeds: hostRequestHeadersSeed(buildKimiDefaultHeaders(version)),
-    webAssetsDir: serverWebAssetsDir(),
+    webAssetsDir,
   });
   logger.info('serving the REST/WS API and the bundled web UI');
   running = {
     address: `http://${v2.host}:${v2.port}`,
     logger,
-    close: () => v2.close(),
+    close: (closeOptions) => v2.close(closeOptions),
   };
 
   track('server_started', { daemon: false });
@@ -315,8 +335,23 @@ async function runServerInProcess(
   });
 }
 
-function serverWebAssetsDir(): string {
-  return resolveServerWebAssetsDir();
+/**
+ * Resolve the web assets directory passed to kap-server. In dev mode
+ * (`KIMI_CODE_DEV_SERVER=1`, set by the repo's `dev:server` / `dev:kap-server*`
+ * scripts) a missing `dist-web` build is tolerated: the server starts API-only
+ * and the web UI is expected to come from the kimi-web Vite dev server.
+ * Outside dev mode the directory is always returned and kap-server keeps
+ * failing fast when the assets are missing.
+ */
+export function serverWebAssetsDir(
+  env: NodeJS.ProcessEnv = process.env,
+  nativeWebAssetsDir: string | null = getNativeWebAssetsDir(),
+): string | undefined {
+  const dir = resolveServerWebAssetsDir(nativeWebAssetsDir);
+  if (env['KIMI_CODE_DEV_SERVER'] === '1' && !existsSync(join(dir, 'index.html'))) {
+    return undefined;
+  }
+  return dir;
 }
 
 export function resolveServerWebAssetsDir(

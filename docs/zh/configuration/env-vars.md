@@ -129,6 +129,7 @@ kimi
 | `KIMI_CODE_AGENT_SWARM_MAX_CONCURRENCY` | 限制 AgentSwarm 初始提升并发阶段可同时运行的子 Agent 数量；不设置表示不限制 | 正整数；非法值会立即失败 |
 | `KIMI_SUBAGENT_TIMEOUT_MS` | 单个子 Agent（`Agent` / `AgentSwarm`）可运行的最长时间（毫秒）；优先级高于 `config.toml` 的 `[subagent] timeout_ms`（默认 `7200000`，即 2 小时） | 正整数；非法值回退到配置或默认值 |
 | `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL` | 在 `kimi web` 下启用实验性的次主力模型功能；`kimi -p` 仍需通过 `KIMI_CODE_EXPERIMENTAL_FLAG=1` 选择 v2 引擎，该 master flag 也会启用本功能 | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
+| `KIMI_CODE_EXPERIMENTAL_TERMINAL_MOUSE_INPUT` | 启用 TUI 主输入框的鼠标单击定位和左键拖动选区。启用后，如需使用终端原生文本选择或回滚缓冲区，请按住 `Shift` 操作 | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
 | `KIMI_SECONDARY_MODEL` | 次主力模型；优先级高于 `config.toml` 的 `[secondary_model] model`。次主力模型实验功能启用后，新派生的子 Agent 默认绑定该模型，而不再继承主 Agent 的模型（TUI 不支持） | 已配置 `[models]` 中的模型 id，如 `kimi-code/kimi-k2.5`；空白值被忽略 |
 | `KIMI_SECONDARY_EFFORT` | 次主力模型的 thinking effort；优先级高于 `config.toml` 的 `[secondary_model] default_effort`，仅在次主力模型及其实验功能均启用时生效（TUI 不支持） | effort 取值，如 `low`；空白值被忽略 |
 | `KIMI_MCP_STARTUP_TIMEOUT_MS` | 所有 MCP server 的全局默认连接超时（毫秒）；优先级高于 `config.toml` 的 `[mcp] startup_timeout_ms`，但低于 `mcp.json` 中单个 server 的 `startupTimeoutMs`（默认 `30000`） | `1` 到 `2147483647` 的整数；非法值被忽略 |
@@ -148,6 +149,7 @@ kimi
 | `KIMI_MODEL_THINKING_KEEP` | 保留思考透传；在 `kimi` 上以 `thinking.keep` 发送，在 `anthropic`（Claude 以及 Kimi 的 Anthropic 兼容模式）上以 `context_management` 的 `clear_thinking_20251015` 编辑发送（开启 keep 会让 Anthropic 请求走 beta Messages API）；覆盖 `[thinking] keep`（其默认值为 `"all"`）；仅在 Thinking 开启时注入 | API 接受的值，如 `all`；传入关值（`false`/`0`/`no`/`off`/`none`/`null`）可禁用 |
 | `KIMI_CODE_NO_AUTO_UPDATE` | 完全禁用更新预检——不检查、不后台安装、不提示。同时兼容旧名 `KIMI_CLI_NO_AUTO_UPDATE` | 真值：`1`/`true`/`yes`/`on` |
 | `KIMI_DISABLE_CRON` | 禁用定时任务工具（`CronCreate` 拒绝新计划，已有任务不触发） | `1` 表示禁用 |
+| `KIMI_TITLE_SPINNER` | Agent 忙碌时让终端标题动起来，使工作状态在终端标签页上可见；空闲时恢复静态标题 | `moon`（默认）、`sparkle`、`braille`、`orbit`、`pulse`、`line`、`hourglass`、`phase`（显示流式输出阶段而非旋转动画）、`off`（不动画）；未知值回退到 `moon` |
 
 ## 诊断日志
 

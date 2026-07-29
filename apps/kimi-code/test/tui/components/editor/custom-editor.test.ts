@@ -116,6 +116,41 @@ describe('CustomEditor onNonEscapeInput', () => {
   });
 });
 
+describe('CustomEditor Ctrl+C selection copy', () => {
+  it('copies the selection instead of invoking the app-level Ctrl+C action', () => {
+    const editor = makeEditor();
+    const onCopySelection = vi.fn();
+    const onCtrlC = vi.fn();
+    editor.onCopySelection = onCopySelection;
+    editor.onCtrlC = onCtrlC;
+    editor.setText('hello world');
+    editor.beginSelection({ line: 0, col: 6 });
+    editor.updateSelection({ line: 0, col: 11 });
+    editor.finishSelection();
+
+    editor.handleInput('\u0003');
+
+    expect(onCopySelection).toHaveBeenCalledWith('world');
+    expect(onCtrlC).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe('hello world');
+    expect(editor.hasSelection()).toBe(true);
+  });
+
+  it('preserves the existing app-level Ctrl+C behavior without a selection', () => {
+    const editor = makeEditor();
+    const onCopySelection = vi.fn();
+    const onCtrlC = vi.fn();
+    editor.onCopySelection = onCopySelection;
+    editor.onCtrlC = onCtrlC;
+    editor.setText('hello world');
+
+    editor.handleInput('\u0003');
+
+    expect(onCopySelection).not.toHaveBeenCalled();
+    expect(onCtrlC).toHaveBeenCalledOnce();
+  });
+});
+
 describe('CustomEditor slash argument completion refresh', () => {
   it('reopens /add-dir directory completions after tab completion and entering slash', async () => {
     const editor = makeEditor();
@@ -724,6 +759,75 @@ describe('CustomEditor bash mode via paste', () => {
 
     expect(editor.inputMode).toBe('bash');
     expect(editor.getText()).toBe('');
+  });
+
+  it('enters bash mode when a folded large ! paste (>1000 chars) lands in an empty prompt', () => {
+    const editor = makeEditor();
+    const modes: Array<'prompt' | 'bash'> = [];
+    editor.onInputModeChange = (mode) => modes.push(mode);
+
+    // 1 + 1000 = 1001 chars → pi-tui folds into a [paste #N …] marker
+    const body = `printf ok #${'x'.repeat(1000 - 'printf ok #'.length)}`;
+    const pasted = `!${body}`;
+    expect(pasted.length).toBe(1001);
+
+    editor.handleInput(`${PASTE_START}${pasted}${PASTE_END}`);
+
+    expect(editor.inputMode).toBe('bash');
+    expect(modes).toEqual(['bash']);
+    expect(editor.getText()).toBe(body);
+    expect(editor.getText()).not.toContain('[paste #');
+    expect(editor.getText().startsWith('!')).toBe(false);
+  });
+
+  it('enters bash mode for a ! paste at the 1000-char fold boundary', () => {
+    const editor = makeEditor();
+    const body = `printf ok #${'x'.repeat(999 - 'printf ok #'.length)}`;
+    const pasted = `!${body}`;
+    expect(pasted.length).toBe(1000);
+
+    editor.handleInput(`${PASTE_START}${pasted}${PASTE_END}`);
+
+    expect(editor.inputMode).toBe('bash');
+    expect(editor.getText()).toBe(body);
+  });
+
+  it('enters bash mode when a folded multiline ! paste (>10 lines) lands in an empty prompt', () => {
+    const editor = makeEditor();
+    // 11 lines beginning with ! → folded by line count
+    const lines = ['!echo one', ...Array.from({ length: 10 }, (_, i) => `echo line${i}`)];
+    expect(lines.length).toBe(11);
+    const pasted = lines.join('\n');
+
+    editor.handleInput(`${PASTE_START}${pasted}${PASTE_END}`);
+
+    expect(editor.inputMode).toBe('bash');
+    expect(editor.getText()).toBe(['echo one', ...lines.slice(1)].join('\n'));
+    expect(editor.getText()).not.toContain('[paste #');
+  });
+
+  it('enters bash mode for a ! paste at the 10-line fold boundary', () => {
+    const editor = makeEditor();
+    const lines = ['!echo one', ...Array.from({ length: 9 }, (_, i) => `echo line${i}`)];
+    expect(lines.length).toBe(10);
+    const pasted = lines.join('\n');
+
+    editor.handleInput(`${PASTE_START}${pasted}${PASTE_END}`);
+
+    expect(editor.inputMode).toBe('bash');
+    expect(editor.getText()).toBe(['echo one', ...lines.slice(1)].join('\n'));
+  });
+
+  it('does not enter bash mode for a large paste without a leading !', () => {
+    const editor = makeEditor();
+    const pasted = `printf ok #${'x'.repeat(1001 - 'printf ok #'.length)}`;
+    expect(pasted.length).toBe(1001);
+    expect(pasted.startsWith('!')).toBe(false);
+
+    editor.handleInput(`${PASTE_START}${pasted}${PASTE_END}`);
+
+    expect(editor.inputMode).toBe('prompt');
+    expect(editor.getText()).toMatch(/\[paste #1 \d+ chars\]/);
   });
 });
 

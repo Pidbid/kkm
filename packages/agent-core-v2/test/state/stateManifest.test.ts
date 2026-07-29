@@ -33,4 +33,9 @@ describe('state manifest', () => {
       .parseDiagnostics;
     expect(diagnostics ?? []).toEqual([]);
   });
+
+  it('does not contain unstable TypeScript symbol ordinals', () => {
+    const manifest = buildStateManifest();
+    expect(manifest).not.toMatch(/__@.+@\d+/);
+  });
 });

@@ -4,7 +4,7 @@ import { join } from 'pathe';
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { Event } from '#/_base/event';
+import { Emitter, Event } from '#/_base/event';
 import { ConfigTarget, IConfigService } from '#/app/config/config';
 import { TOOLS_SECTION } from '#/agent/toolPolicy/configSection';
 import { DEFAULT_AGENT_PROFILE_NAME, IAgentProfileCatalogService } from '#/app/agentProfileCatalog/agentProfileCatalog';
@@ -107,6 +107,46 @@ describe('AgentProfileService.bind', () => {
     expect(svc.getSystemPrompt()).toContain('Kimi Code CLI');
   });
 
+  it('uses the session cwd when binding omits a cwd override', async () => {
+    ctx = createTestAgent(
+      { autoConfigure: false, cwd: homeDir },
+      hostEnvironmentServices(homeDir),
+    );
+    const svc = ctx.get(IAgentProfileService);
+
+    await svc.bind({ profile: DEFAULT_AGENT_PROFILE_NAME, model: MOCK_MODEL });
+
+    expect(svc.data().cwd).toBe(homeDir);
+    expect(svc.getSystemPrompt()).toContain(`The current working directory is \`${homeDir}\``);
+  });
+
+  it('binds without a skill listing when the skill catalog fails to initialize', async () => {
+    const ready = Promise.reject(new Error('skill catalog unavailable'));
+    void ready.catch(() => undefined);
+    ctx = createTestAgent(
+      hostEnvironmentServices(homeDir),
+      sessionService(ISessionSkillCatalog, {
+        _serviceBrand: undefined,
+        catalog: {
+          getModelSkillDisclosure: () => {
+            throw new Error('unreachable catalog');
+          },
+        } as never,
+        ready,
+        onDidChange: Event.None as Event<string>,
+        load: async () => {},
+        reload: async () => {},
+        awaitPendingReloads: async () => {},
+      }),
+    );
+    const profile = ctx.get(IAgentProfileService);
+
+    await profile.bind({ profile: DEFAULT_AGENT_PROFILE_NAME, model: MOCK_MODEL });
+
+    expect(profile.isRunnable()).toBe(true);
+    expect(profile.getSystemPrompt()).toContain('Kimi Code CLI');
+  });
+
   it('persists the complete binding in one journal record', async () => {
     const persistence = new InMemoryWireRecordPersistence();
     ctx = createTestAgent(
@@ -152,6 +192,36 @@ describe('AgentProfileService.bind', () => {
       activeToolNames: expect.arrayContaining(['Read', 'Write', 'Bash']),
       disallowedTools: [],
     });
+  });
+
+  it('re-renders the system prompt when cwd changes after binding', async () => {
+    const { profile: svc } = buildContext();
+    await svc.bind({ profile: DEFAULT_AGENT_PROFILE_NAME, model: MOCK_MODEL, cwd: homeDir });
+    expect(svc.getSystemPrompt()).toContain(`The current working directory is \`${homeDir}\``);
+
+    const nextCwd = await mkdtemp(join(tmpdir(), 'kimi-cwd-next-'));
+    try {
+      svc.update({ cwd: nextCwd });
+      await vi.waitFor(() => {
+        expect(svc.getSystemPrompt()).toContain(
+          `The current working directory is \`${nextCwd}\``,
+        );
+      });
+    } finally {
+      await rm(nextCwd, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the rendered system prompt when cwd is set to its current value', async () => {
+    const { profile: svc } = buildContext();
+    await svc.bind({ profile: DEFAULT_AGENT_PROFILE_NAME, model: MOCK_MODEL, cwd: homeDir });
+    const before = svc.getSystemPrompt();
+    const refresh = vi.spyOn(svc, 'refreshSystemPrompt');
+
+    svc.update({ cwd: homeDir });
+
+    expect(refresh).not.toHaveBeenCalled();
+    expect(svc.getSystemPrompt()).toBe(before);
   });
 
   it('restores the subagent allowlist from the binding record without catalog resolution', async () => {
@@ -663,11 +733,15 @@ describe('AgentToolPolicyService.setSessionDisabledTools', () => {
       hostEnvironmentServices(homeDir),
       sessionService(ISessionSkillCatalog, {
         _serviceBrand: undefined,
-        catalog: { getModelSkillListing: () => skillMarker } as never,
+        catalog: {
+          getModelSkillDisclosure: () => ({ names: ['policy-skill'], listing: skillMarker }),
+          getModelSkillListing: () => skillMarker,
+        } as never,
         ready: Promise.resolve(),
         onDidChange: Event.None as Event<string>,
         load: async () => {},
         reload: async () => {},
+        awaitPendingReloads: async () => {},
       }),
     );
     const { profile, toolPolicy } = profileServices(ctx);
@@ -687,11 +761,15 @@ describe('AgentToolPolicyService.setSessionDisabledTools', () => {
       hostEnvironmentServices(homeDir),
       sessionService(ISessionSkillCatalog, {
         _serviceBrand: undefined,
-        catalog: { getModelSkillListing: () => skillMarker } as never,
+        catalog: {
+          getModelSkillDisclosure: () => ({ names: ['policy-skill'], listing: skillMarker }),
+          getModelSkillListing: () => skillMarker,
+        } as never,
         ready: Promise.resolve(),
         onDidChange: Event.None as Event<string>,
         load: async () => {},
         reload: async () => {},
+        awaitPendingReloads: async () => {},
       }),
     );
     const { profile, toolPolicy } = profileServices(ctx);
@@ -707,11 +785,15 @@ describe('AgentToolPolicyService.setSessionDisabledTools', () => {
       hostEnvironmentServices(homeDir),
       sessionService(ISessionSkillCatalog, {
         _serviceBrand: undefined,
-        catalog: { getModelSkillListing: () => skillMarker } as never,
+        catalog: {
+          getModelSkillDisclosure: () => ({ names: ['policy-skill'], listing: skillMarker }),
+          getModelSkillListing: () => skillMarker,
+        } as never,
         ready: Promise.resolve(),
         onDidChange: Event.None as Event<string>,
         load: async () => {},
         reload: async () => {},
+        awaitPendingReloads: async () => {},
       }),
     );
     const { profile, toolPolicy } = profileServices(ctx);
@@ -723,7 +805,51 @@ describe('AgentToolPolicyService.setSessionDisabledTools', () => {
       .replace(TOOLS_SECTION, { disabled: ['Skill'] }, ConfigTarget.Memory);
 
     expect(toolPolicy.isToolActive('Skill')).toBe(false);
-    await vi.waitFor(() => expect(profile.getSystemPrompt()).not.toContain(skillMarker));
+    await vi.waitFor(() => {
+      expect(profile.getSystemPrompt()).not.toContain(skillMarker);
+    });
+  });
+
+  it('refreshes again when a delayed skill source reload completes after disabled_skills changes', async () => {
+    const staleMarker = 'stale-disabled-skill-marker';
+    const freshMarker = 'fresh-disabled-skill-marker';
+    const sinkChange = new Emitter<string>();
+    let listing = staleMarker;
+    let listingReads = 0;
+    ctx = createTestAgent(
+      hostEnvironmentServices(homeDir),
+      sessionService(ISessionSkillCatalog, {
+        _serviceBrand: undefined,
+        get catalog() {
+          return {
+            getModelSkillDisclosure: () => {
+              listingReads += 1;
+              return { names: ['delayed-skill'], listing };
+            },
+          } as never;
+        },
+        ready: Promise.resolve(),
+        onDidChange: sinkChange.event,
+        load: async () => {},
+        reload: async () => {},
+        awaitPendingReloads: async () => {},
+      }),
+    );
+    const { profile } = profileServices(ctx);
+    await profile.bind({ profile: DEFAULT_AGENT_PROFILE_NAME, model: MOCK_MODEL });
+    expect(profile.getSystemPrompt()).toContain(staleMarker);
+    const initialReads = listingReads;
+
+    sinkChange.fire('disabledSkills');
+    await vi.waitFor(() => expect(listingReads).toBeGreaterThan(initialReads));
+    expect(profile.getSystemPrompt()).toContain(staleMarker);
+
+    listing = freshMarker;
+    sinkChange.fire('extra');
+
+    await vi.waitFor(() => expect(profile.getSystemPrompt()).toContain(freshMarker));
+    expect(profile.getSystemPrompt()).not.toContain(staleMarker);
+    sinkChange.dispose();
   });
 });
 

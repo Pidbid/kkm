@@ -38,9 +38,8 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname = import.meta.dirname;
 const PKG_ROOT = resolve(__dirname, '..');
 export const SRC_ROOT = join(PKG_ROOT, 'src');
 const TEST_ROOT = join(PKG_ROOT, 'test');
@@ -108,6 +107,11 @@ const DOMAIN_LAYER = new Map([
   // It wraps the `_base` `StateRegistry` and depends on nothing else, so any
   // domain may hold its plain-data state through it; sits in L1 beside `event`.
   ['state', 1],
+  // `bashParser` is the App-scope adapter over the pure
+  // `@moonshot-ai/tree-sitter-bash` package (bash source → syntax tree DTO).
+  // It injects no services, so it sits in L1 beside the other pure
+  // capabilities.
+  ['bashParser', 1],
   // persistence/ and os/ — the two-level scopes. `interface` holds contracts
   // (same layer as the old domains they replace); `backends` holds
   // implementations that may depend on cross-domain services at various layers.
@@ -137,6 +141,7 @@ const DOMAIN_LAYER = new Map([
   ['model', 2],
   ['sessionIndex', 2],
   ['sessionStore', 2],
+  ['fileSourceMonitor', 2],
   // L3 — registries & capabilities
   ['tool', 3],
   ['skill', 3],
@@ -186,6 +191,8 @@ const DOMAIN_LAYER = new Map([
   ['contextInjector', 4],
   ['agentPlugin', 4],
   ['systemReminder', 4],
+  ['skillDisclosure', 4],
+  ['dateChange', 4],
   ['contextProjector', 4],
   ['contextSize', 4],
   ['fullCompaction', 4],
@@ -338,7 +345,7 @@ function kosongInfoOf(absPath) {
   const segments = rel.split(/[\\/]/);
   if (segments[0] !== 'kosong') return undefined;
   const sub = segments[1];
-  const last = segments[segments.length - 1] ?? '';
+  const last = segments.at(-1) ?? '';
   return {
     // A file directly under `src/kosong/` has no subdomain.
     sub: sub === undefined || sub.endsWith('.ts') ? undefined : sub,
@@ -758,7 +765,7 @@ function main() {
   return 1;
 }
 
-const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isMain = process.argv[1] && resolve(process.argv[1]) === import.meta.filename;
 if (isMain) {
   process.exit(main());
 }

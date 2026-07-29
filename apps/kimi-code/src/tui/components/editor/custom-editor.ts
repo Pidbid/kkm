@@ -127,6 +127,7 @@ export class CustomEditor extends Editor {
   public onNonEscapeInput?: () => void;
   public onCtrlD?: () => void;
   public onCtrlC?: () => void;
+  public onCopySelection?: (text: string) => void;
   public onToggleToolExpand?: () => void;
   public onOpenExternalEditor?: () => void;
   public onCtrlS?: () => void;
@@ -424,6 +425,11 @@ export class CustomEditor extends Editor {
     }
 
     if (matchesKey(normalized, Key.ctrl('c'))) {
+      const selectedText = this.getSelectedText();
+      if (selectedText !== undefined) {
+        this.onCopySelection?.(selectedText);
+        return;
+      }
       this.onCtrlC?.();
       return;
     }
@@ -496,6 +502,10 @@ export class CustomEditor extends Editor {
         this.cancelAutocompleteActivity();
         return;
       }
+      if (this.hasSelection()) {
+        this.clearSelection();
+        return;
+      }
       this.onEscape?.();
       return;
     }
@@ -523,14 +533,15 @@ export class CustomEditor extends Editor {
     const emptyPromptBeforeInput = this.inputMode === 'prompt' && this.getText().length === 0;
     super.handleInput(normalized);
 
-    // Enter bash mode when `!...` is pasted into an empty prompt. The typed path
-    // above handles the single `!` keystroke; this catches bracketed / Ctrl-V
-    // pastes whose content starts with `!`. Strip the leading `!` so the buffer
-    // holds only the command, exactly like the typed path.
-    if (emptyPromptBeforeInput && this.inputMode === 'prompt' && this.getText().startsWith('!')) {
-      this.inputMode = 'bash';
-      this.onInputModeChange?.('bash');
-      this.setText(this.getText().slice(1));
+    // Enter bash mode when `!...` is pasted into an empty prompt. Check
+    // getExpandedText() so folded large pastes still match on the leading `!`.
+    if (emptyPromptBeforeInput && this.inputMode === 'prompt') {
+      const expanded = this.getExpandedText();
+      if (expanded.startsWith('!')) {
+        this.inputMode = 'bash';
+        this.onInputModeChange?.('bash');
+        this.setText(expanded.slice(1));
+      }
     }
 
     this.reopenAutocompleteAfterInput();

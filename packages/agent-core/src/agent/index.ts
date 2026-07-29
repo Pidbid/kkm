@@ -11,6 +11,8 @@ import { generate, type ChatProvider } from '@moonshot-ai/kosong';
 import type { EnabledPluginSessionStart, PluginCommandDef } from '#/plugin';
 import { expandCommandArguments } from '../plugin/commands';
 import type { PluginCommandOrigin } from './context';
+import type { ContextBreakdownData } from './context/types';
+import { estimateTokens } from '../utils/tokens';
 
 import type { McpConnectionManager } from '../mcp';
 import { FlagResolver, type ExperimentalFlagResolver } from '../flags';
@@ -480,6 +482,63 @@ export class Agent {
     this.config.update({ profileName: profile.name, systemPrompt });
   }
 
+  /**
+   * Estimated per-category token cost behind the `/context` report. Re-gathers
+   * the system-prompt context (AGENTS.md, skill listing) so the memory/skills
+   * split reflects the current filesystem, then attributes the rendered system
+   * prompt between the base template and those injected sections.
+   *
+   * `contextTokens` (the status-bar total) is the last LLM-reported usage and
+   * therefore already covers system prompt + tool schemas + messages + the
+   * last turn's output — so messages are reported as the residual after
+   * subtracting every estimated category from the effective total
+   * (`usedTokens`, which falls back to the category sum before the first
+   * round-trip), keeping the panel consistent with the header instead of
+   * double-counting the overhead.
+   */
+  async contextBreakdownData(): Promise<ContextBreakdownData> {
+    const context = this.systemPromptContextProvider === undefined
+      ? await prepareSystemPromptContext(this.kaos, this.brandHome, {
+          additionalDirs: this.additionalDirs,
+        })
+      : await this.systemPromptContextProvider();
+    const memoryFiles = estimateTokens(context.agentsMd ?? '');
+    const skills = estimateTokens(this.skills?.registry.getModelSkillListing() ?? '');
+    const systemPrompt = Math.max(
+      0,
+      estimateTokens(this.config.systemPrompt) - memoryFiles - skills,
+    );
+    const { systemTools, mcpTools, mcpServers } = this.tools.contextToolBreakdown();
+    const overhead = systemPrompt + systemTools + mcpTools + memoryFiles + skills;
+    // Before the first LLM round-trip the reported total is still 0 while the
+    // system-prompt/tool overhead is real; report the larger of the two so the
+    // header, free space, and the messages residual never contradict the
+    // per-category rows.
+    const usedTokens = Math.max(this.context.tokenCount, overhead);
+    const capability = this.config.modelCapabilities;
+    return {
+      contextTokens: this.context.tokenCount,
+      usedTokens,
+      maxContextTokens: capability.max_input_tokens ?? capability.max_context_tokens ?? 0,
+      systemPrompt,
+      systemTools,
+      mcpTools,
+      mcpServers,
+      memoryFiles,
+      memoryFileEntries: context.agentsMdFiles.map((file) => ({
+        path: file.path,
+        tokens: estimateTokens(file.content),
+      })),
+      skills,
+      skillEntries: (this.skills?.registry.getModelSkillListingEntries() ?? []).map((entry) => ({
+        name: entry.name,
+        source: entry.source,
+        tokens: estimateTokens(entry.text),
+      })),
+      messages: usedTokens - overhead,
+    };
+  }
+
   async resume(options?: AgentRecordsReplayOptions): Promise<{ warning?: string }> {
     const result = await this.records.replay(options);
     this.flushPendingAnthropicThinkingEffortWarnings();
@@ -663,6 +722,7 @@ export class Agent {
       getCronTasks: () => ({ tasks: this.cron?.listTaskSnapshots() ?? [] }),
       getBackgroundOutput: (payload) => this.background.readOutput(payload.taskId, payload.tail),
       getContext: () => this.context.data(),
+      getContextBreakdown: () => this.contextBreakdownData(),
       getConfig: () => this.config.data(),
       getPermission: () => this.permission.data(),
       getPlan: () => this.planMode.data(),

@@ -103,6 +103,7 @@ timeout = 5
 | `merge_all_available_skills` | `boolean` | `true` | 是否合并所有目录中的 Agent Skills |
 | `extra_skill_dirs` | `array<string>` | — | 额外 Skill 搜索目录，叠加到默认目录之上 |
 | `extra_agent_dirs` | `array<string>` | — | 额外自定义 Agent 搜索目录，叠加到默认目录之上 |
+| `disabled_skills` | `array<string>` | `[]` | 在 Kimi 中完全禁用的 Skill 名称（模型列表、Skill 工具、斜杠菜单与用户激活）。大小写不敏感。磁盘上的文件保留。不拦截用 `Bash` 等工具「复现」Skill 工作流的行为——需要时配合 [`permission`](#permission) deny 规则。详见 [Agent Skills](../customization/skills.md#skill-存放位置) |
 | `telemetry` | `boolean` | `true` | 是否启用匿名遥测；显式设为 `false` 时关闭 |
 | `providers` | `table` | `{}` | API 供应商表 → [`providers`](#providers) |
 | `models` | `table` | — | 模型别名表 → [`models`](#models) |
@@ -242,6 +243,8 @@ max_output_size = 8192
 
 `max_steps_per_turn` 可被环境变量 `KIMI_LOOP_MAX_STEPS_PER_TURN` 覆盖，`max_retries_per_step` 可被 `KIMI_LOOP_MAX_RETRIES_PER_STEP` 覆盖，优先级均高于配置文件。
 
+重试仅针对瞬时故障——连接错误、超时、HTTP 429 限流和 5xx 服务端错误。账户额度耗尽或余额不足导致的 429 不会重试，会立即失败：在充值之前重试不可能成功。
+
 ## `background`
 
 `background` 控制后台任务（通过 `Bash` 工具或 `Agent` 工具的 `run_in_background=true` 参数启动）的并发数。
@@ -354,6 +357,8 @@ api_key = "sk-xxx"
 
 内置工具名见[内置工具](../reference/tools.md)。大多数支持规则参数的内置工具会定义自己的匹配对象，例如 `Bash(command-pattern)` 或 `Read(path-pattern)`。`AgentSwarm`、MCP 工具和自定义工具只能按工具名匹配，不支持参数模式。
 
+**权限模式与 deny：** `default_permission_mode`（`manual` / `yolo` / `auto`）只影响「没有 deny 命中时」的行为。`decision = "deny"` 的规则始终拦截匹配的工具调用，包括 YOLO 模式。
+
 ```toml
 [[permission.rules]]
 decision = "allow"
@@ -372,6 +377,20 @@ decision = "ask"
 pattern = "Bash"
 ```
 
+若要在隐藏 Skill 的同时拦住「用 shell 复现其工作流」的辅助命令（例如配合 `disabled_skills`）：
+
+```toml
+disabled_skills = ["review-helper", "legacy-helper"]
+
+[[permission.rules]]
+decision = "deny"
+pattern = "Bash(*review-helper-cli*)"
+
+[[permission.rules]]
+decision = "deny"
+pattern = "Bash(*legacy-helper-cli*)"
+```
+
 ::: tip
 MCP server 的声明配置写在 `~/.kimi-code/mcp.json` 或项目内 `.kimi-code/mcp.json` 中，不在 `config.toml` 里。交互式配置入口是 `/mcp-config`，详见 [Model Context Protocol](../customization/mcp.md)。
 :::
@@ -388,6 +407,8 @@ MCP server 的声明配置写在 `~/.kimi-code/mcp.json` 或项目内 `.kimi-cod
 | `[notifications].enabled` | `boolean` | `true` | 是否发送桌面通知 |
 | `[notifications].notification_condition` | `string` | `unfocused` | 何时通知：`unfocused`（仅终端失去焦点时）或 `always`（总是） |
 | `[upgrade].auto_install` | `boolean` | `true` | 是否自动安装新版本 |
+| `[status_line].items` | `string[]` | `[]` | 底部状态栏第一行展示哪些内置槽位及其顺序：`mode`、`goal`、`model`、`tasks`、`cwd`、`git`、`tips`。缺省保持默认布局；未知 id 跳过并告警 |
+| `[status_line].command` | `string` | `""` | 自定义状态栏命令。其 stdout 第一行替换状态栏第一行，stdin 会收到 JSON 快照（model、cwd、git 分支、permission 模式、plan 模式、上下文用量、session id、版本）。运行上限 300ms、每秒最多一次；失败时回退内置布局 |
 
 ```toml
 # ~/.kimi-code/tui.toml
@@ -403,6 +424,10 @@ notification_condition = "unfocused" # "unfocused" | "always"
 
 [upgrade]
 auto_install = true
+
+# [status_line]
+# items = ["mode", "goal", "model", "tasks", "cwd", "git", "tips"]
+# command = "~/.kimi-code/statusline.sh"
 ```
 
 修改在下次启动时生效，或用 `/reload-tui` 立即生效（只重载 `tui.toml`）；`/reload` 会同时重载 `config.toml` 和 `tui.toml`。

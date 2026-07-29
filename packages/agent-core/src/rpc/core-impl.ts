@@ -931,6 +931,10 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
     return this.sessionApi(sessionId).getContext(payload);
   }
 
+  getContextBreakdown({ sessionId, ...payload }: SessionAgentPayload<EmptyPayload>) {
+    return this.sessionApi(sessionId).getContextBreakdown(payload);
+  }
+
   getConfig({ sessionId, ...payload }: SessionAgentPayload<EmptyPayload>) {
     return this.sessionApi(sessionId).getConfig(payload);
   }
@@ -995,7 +999,9 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       mergeAllAvailableSkills: skills.mergeAllAvailableSkills,
       builtinDir: skills.builtinDir,
     });
-    const registry = new SessionSkillRegistry({});
+    const registry = new SessionSkillRegistry({
+      disabledSkills: skills.disabledSkills,
+    });
     await registry.loadRoots(roots);
     registerBuiltinSkills(registry);
     return registry.listSkills().map(summarizeSkill);
@@ -1199,6 +1205,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       extraDirs: config.extraSkillDirs,
       pluginSkillRoots: this.plugins.pluginSkillRoots(),
       mergeAllAvailableSkills: config.mergeAllAvailableSkills,
+      disabledSkills: config.disabledSkills,
     };
   }
 

@@ -12,8 +12,9 @@
 // at its expansion site with a `/* TypeName — source/file.ts */` comment; a
 // `/* TypeName — recursive (...) */ unknown` marker stops a recursive expansion.
 // Lib globals (Map/Set/Record/…) are referenced as-is. Generic instantiations
-// expand structurally; classes render as their public instance shape. The
-// defining source file heads each group.
+// expand structurally; classes render as their public instance shape.
+// Symbol-keyed branding fields are omitted because snapshots are JSON-safe.
+// The defining source file heads each group.
 //
 // External ambient types referenced but not expanded (from node_modules): Readable, Writable
 //
@@ -23,7 +24,7 @@
 // references become '(circular)', and class instances collapse to a '(ClassName)'
 // marker — the wire shape of an entry is the JSON projection of the type here.
 //
-// Index (Session: 28 keys · Agent: 68 keys)
+// Index (Session: 28 keys · Agent: 70 keys)
 //   Session
 //     cron.inFlight                             src/session/cron/sessionCronServiceImpl.ts
 //     cron.lastSeenAt                           src/session/cron/sessionCronServiceImpl.ts
@@ -59,9 +60,11 @@
 //     activityView.lastTurn                           src/agent/activityView/activityViewService.ts
 //     activityView.lifecycle                          src/agent/activityView/activityViewService.ts
 //     activityView.turn                               src/agent/activityView/activityViewService.ts
+//     agentsMdReminder.seededContent                  src/agent/profile/agentsMdReminderService.ts
 //     contextInjector.isNewTurn                       src/agent/contextInjector/contextInjectorService.ts
 //     contextProjector.lastRepairSignature            src/agent/contextProjector/contextProjectorService.ts
 //     contextSize.lastEmittedTokens                   src/agent/contextSize/contextSizeService.ts
+//     dateChange.seededDate                           src/agent/dateChange/dateChangeService.ts
 //     externalHooks.stopHookContinuationUsed          src/agent/externalHooks/externalHooksService.ts
 //     faultInjection.armed                            src/agent/faultInjection/faultInjectionService.ts
 //     faultInjection.fired                            src/agent/faultInjection/faultInjectionService.ts
@@ -497,6 +500,40 @@ export interface SessionStateSnapshot {
       readonly mermaid?: string;
       readonly d2?: string;
     } | undefined;
+    resolveSkill: (name: string) => /* SkillResolution — packages/agent-core-v2/src/app/skillCatalog/types.ts */ {
+      readonly kind: 'resolved';
+      readonly skill: /* SkillDefinition — packages/agent-core-v2/src/app/skillCatalog/types.ts */ {
+        readonly name: string;
+        readonly description: string;
+        readonly path: string;
+        readonly dir: string;
+        readonly content: string;
+        readonly metadata: /* SkillMetadata — packages/agent-core-v2/src/app/skillCatalog/types.ts */ {
+          readonly name?: string;
+          readonly description?: string;
+          readonly type?: string;
+          readonly whenToUse?: string;
+          readonly disableModelInvocation?: boolean;
+          readonly isSubSkill?: boolean;
+          readonly safe?: boolean;
+          readonly arguments?: string | readonly unknown[];
+          [key: string]: unknown;
+        };
+        readonly source: /* SkillSource — packages/agent-core-v2/src/app/skillCatalog/types.ts */ 'project' | 'user' | 'extra' | 'builtin';
+        readonly plugin?: /* SkillPluginContext — packages/agent-core-v2/src/app/skillCatalog/types.ts */ {
+          readonly id: string;
+          readonly instructions?: string;
+        };
+        readonly mermaid?: string;
+        readonly d2?: string;
+      };
+      readonly canonicalName: string;
+    } | {
+      readonly kind: 'not-found';
+    } | {
+      readonly kind: 'ambiguous';
+      readonly candidates: readonly string[];
+    };
     renderSkillPrompt: (skill: /* SkillDefinition — packages/agent-core-v2/src/app/skillCatalog/types.ts */ {
       readonly name: string;
       readonly description: string;
@@ -524,6 +561,7 @@ export interface SessionStateSnapshot {
     }, rawArgs: string, context?: {
       readonly sessionId?: string;
     }) => string;
+    isSkillDisabled: (name: string) => boolean;
     listSkills: () => readonly /* SkillDefinition — packages/agent-core-v2/src/app/skillCatalog/types.ts */ {
       readonly name: string;
       readonly description: string;
@@ -582,6 +620,10 @@ export interface SessionStateSnapshot {
     }[];
     getKimiSkillsDescription: () => string;
     getModelSkillListing: () => string;
+    getModelSkillDisclosure: () => /* ModelSkillDisclosure — packages/agent-core-v2/src/app/skillCatalog/types.ts */ {
+      readonly names: readonly string[];
+      readonly listing: string;
+    };
   };
   // src/session/sessionToolPolicy/sessionToolPolicyService.ts
   'sessionToolPolicy.state': /* SessionToolPolicyState — packages/agent-core-v2/src/session/sessionToolPolicy/sessionToolPolicyService.ts */ {
@@ -978,6 +1020,8 @@ export interface AgentStateSnapshot {
   'contextProjector.lastRepairSignature': string | null;
   // src/agent/contextSize/contextSizeService.ts
   'contextSize.lastEmittedTokens': number;
+  // src/agent/dateChange/dateChangeService.ts
+  'dateChange.seededDate': string | undefined;
   // src/agent/externalHooks/externalHooksService.ts
   'externalHooks.stopHookContinuationUsed': boolean;
   // src/agent/faultInjection/faultInjectionService.ts
@@ -1009,9 +1053,7 @@ export interface AgentStateSnapshot {
   'llmRequester.emittedThinkingEffortWarnings': Set<string>;
   'llmRequester.lastConfigLogSignature': string | undefined;
   'llmRequester.mediaDegradedTurns': Set<number>;
-  'llmRequester.mediaStrippedTurns': Map<number, /* MediaStripSnapshot — packages/agent-core-v2/src/agent/contextProjector/contextProjector.ts */ {
-    readonly "__@mediaStripSnapshotBrand@2674": undefined;
-  }>;
+  'llmRequester.mediaStrippedTurns': Map<number, /* MediaStripSnapshot — packages/agent-core-v2/src/agent/contextProjector/contextProjector.ts */ {}>;
   'llmRequester.turnConfigs': Map<number, /* TurnRequestConfig — packages/agent-core-v2/src/agent/llmRequester/llmRequesterService.ts */ {
     readonly resolved: /* ProfileModelContext — packages/agent-core-v2/src/agent/profile/profile.ts */ {
       readonly modelAlias: string;
@@ -1086,6 +1128,8 @@ export interface AgentStateSnapshot {
   'permissionMode.lastMode': 'manual' | 'yolo' | 'auto' | undefined;
   // src/agent/plan/injection/planModeInjection.ts
   'plan.wasActive': boolean;
+  // src/agent/profile/agentsMdReminderService.ts
+  'agentsMdReminder.seededContent': string | undefined;
   // src/agent/profile/profileService.ts
   'profile.activeToolNamesOverlay': readonly string[] | undefined;
   'profile.agentsMdWarning': string | undefined;

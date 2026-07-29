@@ -150,6 +150,7 @@ function makeStartupInput(): KimiTUIStartupInput {
       editorCommand: null,
       notifications: { enabled: true, condition: 'unfocused' },
       upgrade: { autoInstall: true },
+      statusLine: { items: null, command: null },
     },
     version: '0.0.0-test',
     workDir: '/tmp/proj-a',
@@ -310,9 +311,12 @@ async function makeDriver(
   harness: ReturnType<typeof makeHarness>;
 }> {
   const harness = makeHarness(session, harnessOverrides);
-  const driver = new KimiTUI(harness as never, makeStartupInput()) as unknown as MessageDriver;
+  const tui = new KimiTUI(harness as never, makeStartupInput());
+  liveDrivers.push(tui);
+  const driver = tui as unknown as MessageDriver;
   vi.spyOn(driver.state.ui, 'requestRender').mockImplementation(() => {});
   vi.spyOn(driver.state.terminal, 'setProgress').mockImplementation(() => {});
+  vi.spyOn(driver.state.terminal, 'setTitle').mockImplementation(() => {});
   driver.persistInputHistory = vi.fn(async () => {});
   await driver.init();
   return { driver, session, harness };
@@ -399,6 +403,7 @@ function countOccurrences(haystack: string, needle: string): number {
 }
 
 const tempDirs: string[] = [];
+const liveDrivers: KimiTUI[] = [];
 const originalKimiCodeHome = process.env['KIMI_CODE_HOME'];
 const originalPluginMarketplaceUrl = process.env['KIMI_CODE_PLUGIN_MARKETPLACE_URL'];
 const originalVisual = process.env['VISUAL'];
@@ -419,6 +424,11 @@ async function makeExportedSessionZip(content = 'session zip'): Promise<string> 
 }
 
 afterEach(async () => {
+  // Stop title-spinner intervals for drivers a test left busy, so timers do
+  // not outlive the test and keep writing OSC titles.
+  for (const tui of liveDrivers.splice(0)) {
+    tui.titleSpinner.dispose();
+  }
   resetCapabilitiesCache();
   for (const dir of tempDirs.splice(0)) {
     await rm(dir, { recursive: true, force: true });

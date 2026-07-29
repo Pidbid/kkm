@@ -269,6 +269,7 @@ export type KimiErrorCode =
   | 'skill.not_found'
   | 'skill.type_unsupported'
   | 'skill.name_empty'
+  | 'skill.disabled'
   | 'records.write_failed'
   | 'compaction.failed'
   | 'compaction.unable'
@@ -364,10 +365,16 @@ export interface QuestionTaskInfo extends TaskInfoBase {
   readonly toolCallId?: string;
 }
 
+export interface MonitorTaskInfo extends TaskInfoBase {
+  readonly kind: 'monitor';
+  readonly command: string;
+}
+
 export type TaskInfo =
   | ProcessTaskInfo
   | AgentTaskInfo
-  | QuestionTaskInfo;
+  | QuestionTaskInfo
+  | MonitorTaskInfo;
 
 export interface CompactionResult {
   readonly summary: string;
@@ -547,7 +554,7 @@ export interface SessionStatusChangedEvent {
 
 export interface ConfigChangedEvent {
   readonly type: 'event.config.changed';
-  readonly changedFields: string[];
+  readonly changed_fields: string[];
   readonly config: ConfigResponse;
 }
 
@@ -1203,6 +1210,7 @@ export const kimiErrorCodeSchema = z.enum([
   'skill.not_found',
   'skill.type_unsupported',
   'skill.name_empty',
+  'skill.disabled',
   'records.write_failed',
   'compaction.failed',
   'compaction.unable',
@@ -1285,10 +1293,16 @@ export const questionTaskInfoSchema = taskInfoBaseSchema.extend({
   toolCallId: z.string().optional(),
 }) satisfies z.ZodType<QuestionTaskInfo>;
 
+export const monitorTaskInfoSchema = taskInfoBaseSchema.extend({
+  kind: z.literal('monitor'),
+  command: z.string(),
+}) satisfies z.ZodType<MonitorTaskInfo>;
+
 export const taskInfoSchema = z.discriminatedUnion('kind', [
   processTaskInfoSchema,
   agentTaskInfoSchema,
   questionTaskInfoSchema,
+  monitorTaskInfoSchema,
 ]) satisfies z.ZodType<TaskInfo>;
 
 export const compactionResultSchema = z.object({
@@ -1439,7 +1453,7 @@ export const sessionStatusChangedEventSchema = z.object({
 
 export const configChangedEventSchema = z.object({
   type: z.literal('event.config.changed'),
-  changedFields: z.array(z.string()),
+  changed_fields: z.array(z.string()),
   config: configResponseSchema,
 }) satisfies z.ZodType<ConfigChangedEvent>;
 
@@ -1771,6 +1785,7 @@ export const agentEventSchema = z.discriminatedUnion('type', [
   workspaceDeletedEventSchema,
   sessionWorkChangedEventSchema,
   sessionStatusChangedEventSchema,
+  configChangedEventSchema,
   modelCatalogChangedEventSchema,
   goalUpdatedEventSchema,
   skillActivatedEventSchema,

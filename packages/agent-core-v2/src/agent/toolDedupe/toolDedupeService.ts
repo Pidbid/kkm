@@ -24,6 +24,7 @@ import { canonicalTelemetryArgs } from '#/_base/utils/canonical-args';
 import type { ToolCallDedupDetectedEvent, ToolCallRepeatEvent } from '#/app/telemetry/events';
 import { ITelemetryService } from '#/app/telemetry/telemetry';
 import type { LLMRequestTrace } from '#/kosong/contract/requestTrace';
+import { parseToolCallArguments } from '#/tool/tool-args-parse';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentStateService } from '#/agent/state/agentState';
 import { IAgentToolExecutorService, type ToolCallDupType } from '#/agent/toolExecutor/toolExecutor';
@@ -86,18 +87,19 @@ interface CheckedToolCall {
   readonly syntheticResult: ToolDedupeResult | null;
 }
 
-function appendReminder(result: ToolDedupeResult, reminderText: string): ToolDedupeResult {
+// Prepend, not append: oversized results are later replaced by a head-only preview that would silently drop a tail reminder.
+function prependReminder(result: ToolDedupeResult, reminderText: string): ToolDedupeResult {
   const output = result.output;
   let newOutput: string | ContentPart[];
   if (typeof output === 'string') {
-    newOutput = output + reminderText;
+    newOutput = reminderText + output;
   } else {
-    const arr: ContentPart[] = [...output];
-    const last = arr.at(-1);
-    if (last !== undefined && last.type === 'text') {
-      arr[arr.length - 1] = { type: 'text', text: last.text + reminderText };
+    const arr = [...output];
+    const first = arr[0];
+    if (first !== undefined && first.type === 'text') {
+      arr[0] = { type: 'text', text: reminderText + first.text };
     } else {
-      arr.push({ type: 'text', text: reminderText });
+      arr.unshift({ type: 'text', text: reminderText });
     }
     newOutput = arr;
   }
@@ -107,7 +109,7 @@ function appendReminder(result: ToolDedupeResult, reminderText: string): ToolDed
 }
 
 function forceStopResult(result: ToolDedupeResult, reminderText: string): ToolDedupeResult {
-  const withReminder = appendReminder(result, reminderText);
+  const withReminder = prependReminder(result, reminderText);
   return { ...withReminder, stopTurn: true };
 }
 
@@ -179,6 +181,13 @@ export class AgentToolDedupeService extends Disposable implements IAgentToolDedu
       }
     });
     toolExecutor.hooks.onDidExecuteTool.register('toolDedupe', async (ctx, next) => {
+      this.registerSkipped(
+        ctx.toolCall.id,
+        ctx.toolCall.name,
+        ctx.args,
+        ctx.toolCall.arguments,
+        ctx.trace,
+      );
       ctx.result = await this.finalizeResult(
         ctx.toolCall.id,
         ctx.toolCall.name,
@@ -305,6 +314,23 @@ export class AgentToolDedupeService extends Disposable implements IAgentToolDedu
     return { syntheticResult: null };
   }
 
+  private registerSkipped(
+    toolCallId: string,
+    toolName: string,
+    args: unknown,
+    rawArguments: unknown,
+    trace: LLMRequestTrace | undefined,
+  ): void {
+    if (this.callKeyByCallId.has(toolCallId)) return;
+    const keyArgs =
+      rawArguments !== undefined &&
+      rawArguments !== null &&
+      parseToolCallArguments(rawArguments).parseFailed
+        ? rawArguments
+        : args;
+    this.checkToolCall(toolCallId, toolName, keyArgs, trace);
+  }
+
   private recordDupType(
     toolCallId: string,
     toolName: string,
@@ -363,13 +389,13 @@ export class AgentToolDedupeService extends Disposable implements IAgentToolDedu
       finalResult = forceStopResult(result, REMINDER_TEXT_3);
       action = 'stop';
     } else if (streak >= REPEAT_REMINDER_3_START) {
-      finalResult = appendReminder(result, REMINDER_TEXT_3);
+      finalResult = prependReminder(result, REMINDER_TEXT_3);
       action = 'r3';
     } else if (streak >= REPEAT_REMINDER_2_START) {
-      finalResult = appendReminder(result, makeReminderText2(streak));
+      finalResult = prependReminder(result, makeReminderText2(streak));
       action = 'r2';
     } else if (streak >= REPEAT_REMINDER_1_START) {
-      finalResult = appendReminder(result, REMINDER_TEXT_1);
+      finalResult = prependReminder(result, REMINDER_TEXT_1);
       action = 'r1';
     }
 
