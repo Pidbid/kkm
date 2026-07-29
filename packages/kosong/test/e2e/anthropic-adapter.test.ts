@@ -143,7 +143,7 @@ describe('e2e: Anthropic adapter bridge', () => {
       );
       expect(harness.requests[0]!.bodyJson).toMatchObject({
         model: 'compatible-preserved-thinking-model',
-        max_tokens: 128000,
+        max_tokens: 32768,
         thinking: { type: 'adaptive', display: 'summarized' },
         output_config: { effort: 'max' },
         context_management: {

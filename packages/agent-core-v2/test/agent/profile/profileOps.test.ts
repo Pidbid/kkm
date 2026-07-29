@@ -228,7 +228,10 @@ function buildHost(key: string): {
     reload: async () => {},
     onDidChange: () => ({ dispose: () => {} }),
   });
-  host.stub(ISessionSkillCatalog, stubUnused());
+  host.stub(ISessionSkillCatalog, {
+    _serviceBrand: undefined,
+    onDidChange: () => ({ dispose: () => {} }),
+  } as unknown as ISessionSkillCatalog);
   host.stub(IAgentSkillDisclosureService, {
     _serviceBrand: undefined,
     resolve: async () => ({ names: [], listing: '' }),

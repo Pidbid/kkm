@@ -150,12 +150,12 @@ describe('AgentSkillService', () => {
   });
 
   it('activate rejects an ambiguous bare plugin skill name with qualified candidates', async () => {
-    skills.register(pluginSkill('beta', 'review'));
-    skills.register(pluginSkill('alpha', 'review'));
+    skills.register(pluginSkill('beta', 'plugin-review'));
+    skills.register(pluginSkill('alpha', 'plugin-review'));
     const svc = ix.get(IAgentSkillService);
 
-    await expect(svc.activate({ name: 'review' })).rejects.toThrow(
-      'Skill "review" is ambiguous. Use one of these qualified names: "alpha:review", "beta:review".',
+    await expect(svc.activate({ name: 'plugin-review' })).rejects.toThrow(
+      'Skill "plugin-review" is ambiguous. Use one of these qualified names: "alpha:plugin-review", "beta:plugin-review".',
     );
     expect(prompted).toHaveLength(0);
   });

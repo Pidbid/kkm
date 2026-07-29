@@ -83,6 +83,7 @@ import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import type { ToolSource } from '#/tool/toolContract';
 import { ISessionWorkspaceContext } from '#/session/workspaceContext/workspaceContext';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
+import { ISessionSkillCatalog } from '#/session/sessionSkillCatalog/skillCatalog';
 import { ISessionToolPolicy } from '#/session/sessionToolPolicy/sessionToolPolicy';
 import { IAgentSkillDisclosureService } from '#/agent/skillDisclosure/skillDisclosure';
 import type { ResolvedAgentProfile, SystemPromptContext } from '#/agent/profile/profile';
@@ -194,6 +195,7 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     @IBootstrapService private readonly bootstrap: IBootstrapService,
     @ISessionWorkspaceContext private readonly workspace: ISessionWorkspaceContext,
     @ISessionAgentProfileCatalog private readonly catalog: ISessionAgentProfileCatalog,
+    @ISessionSkillCatalog private readonly skillCatalog: ISessionSkillCatalog,
     @IAgentSkillDisclosureService private readonly skillDisclosure: IAgentSkillDisclosureService,
     @ISessionToolPolicy private readonly sessionToolPolicy: ISessionToolPolicy,
     @IAgentToolRegistryService private readonly toolRegistry: IAgentToolRegistryService,
@@ -218,6 +220,11 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
           this.publishToolPatternWarnings();
           void this.refreshSystemPrompt();
         }
+      }),
+    );
+    this._register(
+      this.skillCatalog.onDidChange(() => {
+        void this.refreshSystemPrompt();
       }),
     );
   }

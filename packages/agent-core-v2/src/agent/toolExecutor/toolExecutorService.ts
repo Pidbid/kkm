@@ -599,10 +599,6 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
     result: ToolResult,
     options: ToolExecutorExecuteOptions,
   ): Promise<ToolResult> {
-    if (call.kind === 'rejected') {
-      return result;
-    }
-
     const didCtx: ToolDidExecuteContext = {
       turnId: options.turnId,
       signal: options.signal,
@@ -632,7 +628,10 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
 
     const coercedResult = coerceToolResult(didCtx.result, call.toolName);
     const effectiveResult = normalizeToolResult(coercedResult);
-    const mergedNote = [call.normalizationNote, effectiveResult.note]
+    const mergedNote = [
+      call.kind === 'runnable' ? call.normalizationNote : undefined,
+      effectiveResult.note,
+    ]
       .filter((part): part is string => typeof part === 'string' && part.length > 0)
       .join('\n');
     const baseResult = {

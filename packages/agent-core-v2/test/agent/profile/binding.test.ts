@@ -822,9 +822,9 @@ describe('AgentToolPolicyService.setSessionDisabledTools', () => {
         _serviceBrand: undefined,
         get catalog() {
           return {
-            getModelSkillListing: () => {
+            getModelSkillDisclosure: () => {
               listingReads += 1;
-              return listing;
+              return { names: ['delayed-skill'], listing };
             },
           } as never;
         },
