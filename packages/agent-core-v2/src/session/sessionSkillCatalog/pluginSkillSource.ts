@@ -6,7 +6,8 @@
  * (above builtin, below extra / user / workspace, so project, user and extra skills win name
  * collisions). Watches the resolved roots through `fileSourceMonitor` and
  * re-emits both filesystem changes and `plugin.onDidReload` through
- * `onDidChange`. Bound at Session scope.
+ * `onDidChange`, so explicit plugin reloads re-pull plugin skills and prompt
+ * contributions. Bound at Session scope.
  */
 
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';

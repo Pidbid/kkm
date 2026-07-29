@@ -101,6 +101,7 @@
 //     plan.wasActive                                  src/agent/plan/injection/planModeInjection.ts
 //     profile.activeToolNamesOverlay                  src/agent/profile/profileService.ts
 //     profile.agentsMdWarning                         src/agent/profile/profileService.ts
+//     profile.emittedPluginBudgetWarnings             src/agent/profile/profileService.ts
 //     profile.emittedThinkingEffortWarnings           src/agent/profile/profileService.ts
 //     profile.emittedToolPatternWarnings              src/agent/profile/profileService.ts
 //     prompt.launching                                src/agent/prompt/promptService.ts
@@ -203,6 +204,7 @@ export interface SessionStateSnapshot {
           readonly now?: string;
           readonly skills?: string;
           readonly skillActive?: boolean;
+          readonly pluginSections?: string;
           readonly productName?: string;
           readonly replyStyleGuide?: string;
           [key: string]: unknown;
@@ -269,6 +271,7 @@ export interface SessionStateSnapshot {
       readonly now?: string;
       readonly skills?: string;
       readonly skillActive?: boolean;
+      readonly pluginSections?: string;
       readonly productName?: string;
       readonly replyStyleGuide?: string;
       [key: string]: unknown;
@@ -1133,6 +1136,7 @@ export interface AgentStateSnapshot {
   // src/agent/profile/profileService.ts
   'profile.activeToolNamesOverlay': readonly string[] | undefined;
   'profile.agentsMdWarning': string | undefined;
+  'profile.emittedPluginBudgetWarnings': Set<string>;
   'profile.emittedThinkingEffortWarnings': Set<string>;
   'profile.emittedToolPatternWarnings': Set<string>;
   // src/agent/prompt/promptService.ts
