@@ -19,8 +19,9 @@
  * at its expansion site with an inline `TypeName — source/file.ts` comment;
  * recursion stops with a `TypeName — recursive` marker on an `unknown`. Generic
  * instantiations are expanded structurally and classes render as their public
- * instance shape; only lib globals (`Map`/`Set`/…) and a few noted external
- * ambient types keep their names.
+ * instance shape; symbol-keyed branding fields are omitted because they are
+ * not part of the JSON-safe snapshot shape. Only lib globals (`Map`/`Set`/…)
+ * and a few noted external ambient types keep their names.
  *
  * Usage:
  *   pnpm --filter @moonshot-ai/agent-core-v2 gen:state-manifest          # write the file
@@ -671,7 +672,14 @@ class TypeRenderer {
   }
 
   private isPublic(prop: MorphSymbol): boolean {
-    if (prop.getName().startsWith('#')) return false;
+    const name = prop.getName();
+    if (name.startsWith('#')) return false;
+    // TypeScript exposes computed symbol keys using internal names such as
+    // `__@mediaStripSnapshotBrand@2752`. The numeric suffix is allocated by
+    // the checker and can vary between otherwise identical clean installs.
+    // Symbols are also omitted by the JSON-safe state snapshot, so keeping
+    // these nominal branding fields would be both unstable and misleading.
+    if (/^__@.+@\d+$/.test(name)) return false;
     return !prop.getDeclarations().some((decl) => {
       const modifiers = ts.canHaveModifiers(decl.compilerNode)
         ? ts.getModifiers(decl.compilerNode)
@@ -752,8 +760,9 @@ function renderManifest(
     '// at its expansion site with a `/* TypeName — source/file.ts */` comment; a',
     '// `/* TypeName — recursive (...) */ unknown` marker stops a recursive expansion.',
     '// Lib globals (Map/Set/Record/…) are referenced as-is. Generic instantiations',
-    '// expand structurally; classes render as their public instance shape. The',
-    '// defining source file heads each group.',
+    '// expand structurally; classes render as their public instance shape.',
+    '// Symbol-keyed branding fields are omitted because snapshots are JSON-safe.',
+    '// The defining source file heads each group.',
   ];
   if (renderer.externals.size > 0) {
     out.push(

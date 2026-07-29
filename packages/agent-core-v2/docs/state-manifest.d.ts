@@ -12,8 +12,9 @@
 // at its expansion site with a `/* TypeName — source/file.ts */` comment; a
 // `/* TypeName — recursive (...) */ unknown` marker stops a recursive expansion.
 // Lib globals (Map/Set/Record/…) are referenced as-is. Generic instantiations
-// expand structurally; classes render as their public instance shape. The
-// defining source file heads each group.
+// expand structurally; classes render as their public instance shape.
+// Symbol-keyed branding fields are omitted because snapshots are JSON-safe.
+// The defining source file heads each group.
 //
 // External ambient types referenced but not expanded (from node_modules): Readable, Writable
 //
@@ -1052,9 +1053,7 @@ export interface AgentStateSnapshot {
   'llmRequester.emittedThinkingEffortWarnings': Set<string>;
   'llmRequester.lastConfigLogSignature': string | undefined;
   'llmRequester.mediaDegradedTurns': Set<number>;
-  'llmRequester.mediaStrippedTurns': Map<number, /* MediaStripSnapshot — packages/agent-core-v2/src/agent/contextProjector/contextProjector.ts */ {
-    readonly "__@mediaStripSnapshotBrand@2752": undefined;
-  }>;
+  'llmRequester.mediaStrippedTurns': Map<number, /* MediaStripSnapshot — packages/agent-core-v2/src/agent/contextProjector/contextProjector.ts */ {}>;
   'llmRequester.turnConfigs': Map<number, /* TurnRequestConfig — packages/agent-core-v2/src/agent/llmRequester/llmRequesterService.ts */ {
     readonly resolved: /* ProfileModelContext — packages/agent-core-v2/src/agent/profile/profile.ts */ {
       readonly modelAlias: string;
