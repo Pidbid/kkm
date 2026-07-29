@@ -47,6 +47,8 @@ export type TasksBrowserState = {
   tailLoading: boolean;
   tailRequestId: number;
   tailRequestTaskId: string | undefined;
+  tailReloadPending: boolean;
+  tailFinalReloadTaskId: string | undefined;
   flashMessage: string | undefined;
   flashTimer: NodeJS.Timeout | undefined;
   pollTimer: NodeJS.Timeout | undefined;
@@ -91,6 +93,7 @@ export class TasksBrowserController {
 
     const filter: TasksFilter = 'all';
     const selectedTaskId = this.pickInitialSelection(tasks, filter);
+    const selectedTask = tasks.find((task) => task.taskId === selectedTaskId);
     const component = new TasksBrowserApp(
       {
         tasks,
@@ -126,6 +129,11 @@ export class TasksBrowserController {
       tailLoading: false,
       tailRequestId: 0,
       tailRequestTaskId: undefined,
+      tailReloadPending: false,
+      tailFinalReloadTaskId:
+        selectedTask !== undefined && selectedTask.status !== 'running'
+          ? selectedTaskId
+          : undefined,
       flashMessage: undefined,
       flashTimer: undefined,
       pollTimer,
@@ -160,7 +168,18 @@ export class TasksBrowserController {
     if (browser === undefined) return;
     const tasks = [...this.host.backgroundTasks.values()];
     this.pushProps(tasks);
-    this.reloadSelectedTail(browser);
+    const selectedTask =
+      browser.selectedTaskId === undefined
+        ? undefined
+        : this.host.backgroundTasks.get(browser.selectedTaskId);
+    if (selectedTask === undefined) return;
+    if (selectedTask.status !== 'running') {
+      if (browser.tailFinalReloadTaskId === selectedTask.taskId) return;
+      browser.tailFinalReloadTaskId = selectedTask.taskId;
+    } else {
+      browser.tailFinalReloadTaskId = undefined;
+    }
+    this.reloadSelectedTail(browser, { queueIfBusy: true });
   }
 
   async refreshOutputViewer(opts: { silent?: boolean } = {}): Promise<void> {
@@ -314,6 +333,10 @@ export class TasksBrowserController {
     browser.tailOutput = undefined;
     browser.tailError = undefined;
     browser.tailLoading = true;
+    browser.tailReloadPending = false;
+    const selectedTask = this.host.backgroundTasks.get(taskId);
+    browser.tailFinalReloadTaskId =
+      selectedTask !== undefined && selectedTask.status !== 'running' ? taskId : undefined;
     this.pushProps([...this.host.backgroundTasks.values()]);
     this.loadTail(taskId);
   }
@@ -329,7 +352,7 @@ export class TasksBrowserController {
     const browser = this.host.state.tasksBrowser;
     if (browser === undefined) return;
     this.flash('Refreshing…', 600);
-    this.reloadSelectedTail(browser);
+    this.reloadSelectedTail(browser, { queueIfBusy: true });
     void this.refresh({ reloadTail: false });
   }
 
@@ -433,8 +456,7 @@ export class TasksBrowserController {
         current.tailOutput = output;
         current.tailError = undefined;
         current.tailLoading = false;
-        current.tailRequestTaskId = undefined;
-        this.pushProps([...this.host.backgroundTasks.values()]);
+        this.finishTailLoad(current, taskId);
       })
       .catch((error: unknown) => {
         const current = state.tasksBrowser;
@@ -443,18 +465,33 @@ export class TasksBrowserController {
         if (current.selectedTaskId !== taskId) return;
         current.tailError = error instanceof Error ? error.message : String(error);
         current.tailLoading = false;
-        current.tailRequestTaskId = undefined;
-        this.pushProps([...this.host.backgroundTasks.values()]);
+        this.finishTailLoad(current, taskId);
       });
   }
 
-  private reloadSelectedTail(browser: TasksBrowserState): void {
-    if (
-      browser.selectedTaskId !== undefined &&
-      browser.tailRequestTaskId !== browser.selectedTaskId
-    ) {
-      this.loadTail(browser.selectedTaskId);
+  private finishTailLoad(browser: TasksBrowserState, taskId: string): void {
+    const reloadPending = browser.tailReloadPending;
+    browser.tailReloadPending = false;
+    browser.tailRequestTaskId = undefined;
+    this.pushProps([...this.host.backgroundTasks.values()]);
+    if (reloadPending && browser.selectedTaskId === taskId) {
+      this.loadTail(taskId);
     }
+  }
+
+  private reloadSelectedTail(
+    browser: TasksBrowserState,
+    opts: { queueIfBusy?: boolean } = {},
+  ): void {
+    const taskId = browser.selectedTaskId;
+    if (taskId === undefined) return;
+    if (browser.tailRequestTaskId === taskId) {
+      if (opts.queueIfBusy === true) {
+        browser.tailReloadPending = true;
+      }
+      return;
+    }
+    this.loadTail(taskId);
   }
 
   private flash(message: string, durationMs = 2500): void {
