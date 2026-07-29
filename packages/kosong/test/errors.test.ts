@@ -2,6 +2,7 @@ import {
   APIConnectionError,
   APIContextOverflowError,
   APIEmptyResponseError,
+  APIProviderQuotaExhaustedError,
   APIProviderRateLimitError,
   APIRequestTooLargeError,
   APIStatusError,
@@ -704,7 +705,9 @@ describe('parseMaxTokensLimit', () => {
   });
 
   it('parses the "less than or equal to" and bare "<=" wordings', () => {
-    expect(parseMaxTokensLimit('400 Bad Request: max_tokens must be less than or equal to 4096')).toBe(4096);
+    expect(
+      parseMaxTokensLimit('400 Bad Request: max_tokens must be less than or equal to 4096'),
+    ).toBe(4096);
     expect(parseMaxTokensLimit('400 Bad Request: max_tokens <= 2048')).toBe(2048);
   });
 
@@ -714,5 +717,58 @@ describe('parseMaxTokensLimit', () => {
     expect(
       parseMaxTokensLimit('prompt is too long: the maximum context length is 200000 tokens'),
     ).toBeNull();
+  });
+});
+
+describe('APIProviderQuotaExhaustedError', () => {
+  it('extends APIStatusError and preserves HTTP details', () => {
+    const err = new APIProviderQuotaExhaustedError('quota exhausted', 'req-quota', 12_500);
+    expect(err).toBeInstanceOf(APIStatusError);
+    expect(err).toBeInstanceOf(ChatProviderError);
+    expect(err).not.toBeInstanceOf(APIProviderRateLimitError);
+    expect(err.name).toBe('APIProviderQuotaExhaustedError');
+    expect(err.statusCode).toBe(429);
+    expect(err.requestId).toBe('req-quota');
+    expect(err.retryAfterMs).toBe(12_500);
+  });
+});
+
+describe('normalizeAPIStatusError: 429 stays vendor-neutral', () => {
+  // The shared normalization never decides what a vendor's 429 means: quota
+  // classification lives with the vendor (`classifyKimiQuotaError`, the
+  // OpenAI base's own insufficient_quota check), so even billing wordings
+  // normalize to a retryable rate limit here.
+  it.each([
+    'Too many requests',
+    'request reached user+model max RPM: 50',
+    'your token quota per minute was exceeded',
+    'Your account org-0123456789abcdef <ak-test> is suspended due to insufficient balance, please recharge your account or check your plan and billing details',
+  ])('normalizes 429 "%s" to APIProviderRateLimitError', (message) => {
+    const error = normalizeAPIStatusError(429, message);
+    expect(error).toBeInstanceOf(APIProviderRateLimitError);
+    expect(error).not.toBeInstanceOf(APIProviderQuotaExhaustedError);
+  });
+
+  it('keeps billing wording on other statuses a generic status error', () => {
+    const error = normalizeAPIStatusError(403, 'insufficient balance');
+    expect(error).not.toBeInstanceOf(APIProviderQuotaExhaustedError);
+    expect(error.constructor).toBe(APIStatusError);
+  });
+});
+
+describe('quota-exhausted retry and rate-limit semantics', () => {
+  it('is not retryable while a plain rate limit stays retryable', () => {
+    expect(isRetryableGenerateError(new APIProviderQuotaExhaustedError('quota exhausted'))).toBe(
+      false,
+    );
+    expect(isRetryableGenerateError(new APIProviderRateLimitError('rate limited'))).toBe(true);
+    expect(isRetryableGenerateError(new APIStatusError(429, 'rate limited'))).toBe(true);
+  });
+
+  it('is not a provider rate limit despite carrying status 429', () => {
+    expect(isProviderRateLimitError(new APIProviderQuotaExhaustedError('quota exhausted'))).toBe(
+      false,
+    );
+    expect(isProviderRateLimitError(new APIProviderRateLimitError('rate limited'))).toBe(true);
   });
 });

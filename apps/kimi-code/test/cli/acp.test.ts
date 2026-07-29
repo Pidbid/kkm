@@ -15,6 +15,14 @@ vi.mock('@moonshot-ai/acp-adapter', () => ({
   runAcpServer: vi.fn(async () => undefined),
 }));
 
+vi.mock('@moonshot-ai/kimi-code-sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@moonshot-ai/kimi-code-sdk')>();
+  return {
+    ...actual,
+    createKimiHarness: vi.fn(() => ({})),
+  };
+});
+
 import { runAcpServer } from '@moonshot-ai/acp-adapter';
 
 import { registerAcpCommand } from '#/cli/sub/acp';

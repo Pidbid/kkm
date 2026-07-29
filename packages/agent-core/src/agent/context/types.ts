@@ -131,3 +131,77 @@ export interface AgentContextData {
   history: readonly ContextMessage[];
   tokenCount: number;
 }
+
+/**
+ * Estimated per-category token cost of the agent's context, behind the
+ * `/context` report. All values except `contextTokens` are character-heuristic
+ * estimates (see `estimateTokens`); the real numbers only exist per LLM
+ * round-trip and are not attributed per category.
+ */
+export interface ContextBreakdownData {
+  /**
+   * Last known total context tokens (same source as the status bar): the most
+   * recent LLM-reported usage, which covers system prompt + tool schemas +
+   * messages + the last turn's output. 0 before the first LLM round-trip.
+   */
+  contextTokens: number;
+  /**
+   * Effective used tokens for the report header and free-space calculation:
+   * `max(contextTokens, estimated category sum)`. Before the first LLM
+   * round-trip `contextTokens` is still 0 while the system-prompt/tool
+   * overhead is real, so the raw total would contradict the per-category
+   * rows (non-zero categories against "100% free"); the effective value
+   * keeps the panel self-consistent in both states.
+   */
+  usedTokens: number;
+  /** Model context-window size in tokens; 0 when unknown. */
+  maxContextTokens: number;
+  /**
+   * Estimated tokens of the base system prompt — the rendered template minus
+   * the injected memory (AGENTS.md) and skill-listing sections.
+   */
+  systemPrompt: number;
+  /** Estimated schema tokens of the builtin + user tools currently exposed. */
+  systemTools: number;
+  /** Estimated schema tokens of the MCP tools currently exposed inline. */
+  mcpTools: number;
+  /** Per-server split of `mcpTools` (only servers with exposed tools appear). */
+  mcpServers: readonly ContextBreakdownMcpServer[];
+  /** Estimated tokens of the injected AGENTS.md memory content. */
+  memoryFiles: number;
+  /** Per-file split of `memoryFiles`. */
+  memoryFileEntries: readonly ContextBreakdownMemoryFile[];
+  /** Estimated tokens of the skill listing injected into the system prompt. */
+  skills: number;
+  /**
+   * Per-skill split of the model skill listing. Covers exactly the skills the
+   * model listing carries (invocable, non-sub-skills) — a subset of what
+   * `/skills` lists. Per-skill values exclude the listing's header and group
+   * labels, so they sum to slightly less than `skills`.
+   */
+  skillEntries: readonly ContextBreakdownSkill[];
+  /**
+   * Remainder attributed to the conversation: `usedTokens` minus every
+   * estimated category above. Because the LLM-reported total covers system
+   * prompt + tool schemas + the last turn's output, this residual also
+   * absorbs the output tokens and any estimation error of the other
+   * categories. It is 0 before the first LLM round-trip.
+   */
+  messages: number;
+}
+
+export interface ContextBreakdownMcpServer {
+  readonly name: string;
+  readonly tokens: number;
+}
+
+export interface ContextBreakdownMemoryFile {
+  readonly path: string;
+  readonly tokens: number;
+}
+
+export interface ContextBreakdownSkill {
+  readonly name: string;
+  readonly source: SkillSource;
+  readonly tokens: number;
+}

@@ -42,6 +42,19 @@ const REVIEW_SKILL = stubSkill('review', {
   source: 'project',
 });
 
+function pluginSkill(pluginId: string, name: string) {
+  const dir = `/plugins/${pluginId}/skills/${name}`;
+  return stubSkill(name, {
+    description: `${pluginId} ${name}`,
+    path: `${dir}/SKILL.md`,
+    dir,
+    content: `# ${pluginId} ${name}`,
+    metadata: {},
+    source: 'extra',
+    plugin: { id: pluginId },
+  });
+}
+
 function stubSessionContext(sessionId = 'test-session'): ISessionContext {
   return {
     _serviceBrand: undefined,
@@ -99,6 +112,7 @@ describe('AgentSkillService', () => {
       onDidChange: () => ({ dispose: () => {} }),
       load: async () => {},
       reload: async () => {},
+      awaitPendingReloads: async () => {},
     };
     ix.set(ISessionSkillCatalog, skillCatalog);
     ix.set(IAgentSkillService, new SyncDescriptor(AgentSkillService));
@@ -116,6 +130,34 @@ describe('AgentSkillService', () => {
       kind: 'skill_activation',
       skillName: 'commit',
     });
+  });
+
+  it('activate resolves a plugin-qualified skill and records its canonical name', async () => {
+    skills.register(pluginSkill('example-plugin', 'diagnose'));
+    const svc = ix.get(IAgentSkillService);
+
+    await svc.activate({ name: 'example-plugin:diagnose' });
+
+    expect(prompted).toHaveLength(1);
+    expect(prompted[0]!.origin).toMatchObject({
+      kind: 'skill_activation',
+      skillName: 'example-plugin:diagnose',
+    });
+    expect(prompted[0]!.content[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('name="example-plugin:diagnose"'),
+    });
+  });
+
+  it('activate rejects an ambiguous bare plugin skill name with qualified candidates', async () => {
+    skills.register(pluginSkill('beta', 'review'));
+    skills.register(pluginSkill('alpha', 'review'));
+    const svc = ix.get(IAgentSkillService);
+
+    await expect(svc.activate({ name: 'review' })).rejects.toThrow(
+      'Skill "review" is ambiguous. Use one of these qualified names: "alpha:review", "beta:review".',
+    );
+    expect(prompted).toHaveLength(0);
   });
 
   it('activate throws for an unknown skill', async () => {
@@ -158,6 +200,26 @@ describe('AgentSkillService', () => {
     expect(prompted).toEqual([]);
   });
 
+  it('activate throws for skills listed in disabled_skills config', async () => {
+    const disabledCatalog = new InMemorySkillCatalog({ disabledSkills: ['review-helper'] });
+    disabledCatalog.register(stubSkill('review-helper'));
+    ix.set(ISessionSkillCatalog, {
+      _serviceBrand: undefined,
+      catalog: disabledCatalog,
+      ready: Promise.resolve(),
+      onDidChange: () => ({ dispose: () => {} }),
+      load: async () => {},
+      reload: async () => {},
+      awaitPendingReloads: async () => {},
+    } satisfies ISessionSkillCatalog);
+    ix.set(IAgentSkillService, new SyncDescriptor(AgentSkillService));
+
+    const svc = ix.get(IAgentSkillService);
+    await expect(svc.activate({ name: 'review-helper' })).rejects.toThrow(
+      /disabled in configuration \(disabled_skills\)/i,
+    );
+  });
+
   it('activate waits for the catalog to be ready before resolving', async () => {
     let resolveReady!: () => void;
     const ready = new Promise<void>((resolve) => {
@@ -172,6 +234,7 @@ describe('AgentSkillService', () => {
       onDidChange: () => ({ dispose: () => {} }),
       load: async () => {},
       reload: async () => {},
+      awaitPendingReloads: async () => {},
     } satisfies ISessionSkillCatalog);
     ix.set(IAgentSkillService, new SyncDescriptor(AgentSkillService));
 
@@ -226,6 +289,7 @@ describe('SkillTool', () => {
       onDidChange: () => ({ dispose: () => {} }),
       load: async () => {},
       reload: async () => {},
+      awaitPendingReloads: async () => {},
     } satisfies ISessionSkillCatalog);
     ix.set(IAgentSkillService, new SyncDescriptor(AgentSkillService));
   });
@@ -296,6 +360,44 @@ describe('SkillTool', () => {
     });
   });
 
+  it('loads a plugin skill by its qualified name', async () => {
+    skills.register(pluginSkill('example-plugin', 'diagnose'));
+
+    const result = await executeTool(
+      makeTool(ix),
+      toolContext({ skill: 'example-plugin:diagnose' }),
+    );
+
+    expect(result).toMatchObject({
+      output:
+        'Skill "example-plugin:diagnose" loaded inline. Follow its instructions.',
+    });
+    expect(result.delivery?.message.origin).toMatchObject({
+      kind: 'skill_activation',
+      skillName: 'example-plugin:diagnose',
+    });
+    expect(result.delivery?.message.content[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('name="example-plugin:diagnose"'),
+    });
+  });
+
+  it('returns qualified candidates for an ambiguous bare plugin skill name', async () => {
+    skills.register(pluginSkill('beta', 'review'));
+    skills.register(pluginSkill('alpha', 'review'));
+
+    const result = await executeTool(
+      makeTool(ix),
+      toolContext({ skill: 'review' }),
+    );
+
+    expect(result).toEqual({
+      isError: true,
+      output:
+        'Skill "review" is ambiguous. Use one of these qualified names: "alpha:review", "beta:review".',
+    });
+  });
+
   it('rejects skills that disable model invocation', async () => {
     skills.register(stubSkill('private', { metadata: { disableModelInvocation: true } }));
 
@@ -307,6 +409,30 @@ describe('SkillTool', () => {
     expect(result).toMatchObject({
       isError: true,
       output: 'Skill "private" can only be triggered by the user (model invocation is disabled).',
+    });
+  });
+
+  it('rejects skills listed in disabled_skills config', async () => {
+    const disabledCatalog = new InMemorySkillCatalog({ disabledSkills: ['review-helper'] });
+    disabledCatalog.register(stubSkill('review-helper'));
+    ix.set(ISessionSkillCatalog, {
+      _serviceBrand: undefined,
+      catalog: disabledCatalog,
+      ready: Promise.resolve(),
+      onDidChange: () => ({ dispose: () => {} }),
+      load: async () => {},
+      reload: async () => {},
+      awaitPendingReloads: async () => {},
+    } satisfies ISessionSkillCatalog);
+
+    const result = await executeTool(
+      makeTool(ix),
+      toolContext({ skill: 'review-helper' }),
+    );
+
+    expect(result).toMatchObject({
+      isError: true,
+      output: 'Skill "review-helper" is disabled in configuration (disabled_skills).',
     });
   });
 

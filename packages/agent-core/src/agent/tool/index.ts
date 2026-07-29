@@ -17,6 +17,7 @@ import type { MCPClient, MCPToolDefinition } from '../../mcp/types';
 import { DEFAULT_AGENT_PROFILES } from '../../profile';
 import { resolveSubagentTimeoutMs } from '../../session/subagent-host';
 import { extendWorkspaceWithSkillRoots } from '../../skill';
+import { estimateTokensForTools } from '../../utils/tokens';
 import { fingerprint } from '../llm-request-logger';
 import * as b from '../../tools/builtin';
 import type { ToolStore, ToolStoreData, ToolStoreKey } from '../../tools/store';
@@ -747,6 +748,38 @@ export class ToolManager {
     return Array.from(this.toolInfos());
   }
 
+  /**
+   * Estimated schema tokens of the tools currently exposed to the model,
+   * split into MCP and non-MCP (builtin + user) buckets for the `/context`
+   * report. Deferred tools are skipped: under progressive disclosure their
+   * schemas travel as context messages instead of the top-level `tools[]`,
+   * so their cost is already covered by the message estimate.
+   */
+  contextToolBreakdown(): {
+    systemTools: number;
+    mcpTools: number;
+    mcpServers: readonly { name: string; tokens: number }[];
+  } {
+    let systemTools = 0;
+    let mcpTools = 0;
+    const perServer = new Map<string, number>();
+    for (const tool of this.loopTools) {
+      if (tool.deferred === true) continue;
+      const estimate = estimateTokensForTools([tool]);
+      const mcpEntry = this.mcpTools.get(tool.name);
+      if (mcpEntry === undefined) {
+        systemTools += estimate;
+      } else {
+        mcpTools += estimate;
+        perServer.set(mcpEntry.serverName, (perServer.get(mcpEntry.serverName) ?? 0) + estimate);
+      }
+    }
+    const mcpServers = [...perServer.entries()]
+      .map(([name, tokens]) => ({ name, tokens }))
+      .toSorted((a, b) => a.name.localeCompare(b.name));
+    return { systemTools, mcpTools, mcpServers };
+  }
+
   storeData(): Readonly<Record<string, unknown>> {
     return { ...this.store };
   }
@@ -812,6 +845,7 @@ export class ToolManager {
         new b.TaskListTool(background),
         new b.TaskOutputTool(background),
         new b.TaskStopTool(background),
+        allowBackground && new b.MonitorTool(kaos, cwd, background),
         this.agent.cron && new b.CronCreateTool(this.agent.cron),
         this.agent.cron && new b.CronListTool(this.agent.cron),
         this.agent.cron && new b.CronDeleteTool(this.agent.cron),

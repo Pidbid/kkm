@@ -338,6 +338,7 @@ watch(
           { value: 'dark', label: t('theme.dark') },
           { value: 'system', label: t('theme.system') },
         ]"
+        variant="tinted"
         @update:model-value="onColorScheme"
       />
     </div>

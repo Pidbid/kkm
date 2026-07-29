@@ -110,6 +110,7 @@ import { SessionEventHandler } from './controllers/session-event-handler';
 import { SessionReplayRenderer } from './controllers/session-replay';
 import { StreamingUIController } from './controllers/streaming-ui';
 import { TasksBrowserController } from './controllers/tasks-browser';
+import { TerminalTitleSpinnerController } from './controllers/terminal-title-spinner';
 import { installRainbowDance } from './easter-eggs/dance';
 import { adaptPanelResponse } from './reverse-rpc/approval/adapter';
 import { ApprovalController } from './reverse-rpc/approval/controller';
@@ -145,6 +146,7 @@ import { sessionRowsForPicker } from './utils/session-picker-rows';
 import { formatBashOutputForDisplay } from './utils/shell-output';
 import { combineStartupNotice, isOAuthLoginRequiredError } from './utils/startup';
 import { installTerminalFocusTracking } from './utils/terminal-focus';
+import { installEditorMouseTracking } from './utils/editor-mouse';
 import { notifyTerminalOnce } from './utils/terminal-notification';
 import { installTerminalThemeTracking } from './utils/terminal-theme';
 import { detectTmuxKeyboardWarning } from './utils/tmux-keyboard';
@@ -241,6 +243,7 @@ function createInitialAppState(input: KimiTUIStartupInput): AppState {
     disablePasteBurst: input.tuiConfig.disablePasteBurst,
     notifications: input.tuiConfig.notifications,
     upgrade: input.tuiConfig.upgrade,
+    statusLine: input.tuiConfig.statusLine,
     availableModels: {},
     availableProviders: {},
     sessionTitle: null,
@@ -326,6 +329,7 @@ export class KimiTUI {
   aborted = false;
   private terminalFocusTrackingDispose: (() => void) | undefined;
   private terminalThemeTrackingDispose: (() => void) | undefined;
+  private terminalMouseTrackingDispose: (() => void) | undefined;
   private clipboardImageHintController: ClipboardImageHintController | undefined;
   private uninstallRainbowDance: () => void;
   private signalCleanupHandlers: Array<() => void> = [];
@@ -352,6 +356,7 @@ export class KimiTUI {
   readonly sessionReplay: SessionReplayRenderer;
   readonly tasksBrowserController: TasksBrowserController;
   readonly editorKeyboard: EditorKeyboardController;
+  readonly titleSpinner: TerminalTitleSpinnerController;
 
   /** Timer that auto-clears the one-shot "moved to background" footer hint. */
   private detachHintClearTimer: ReturnType<typeof setTimeout> | undefined;
@@ -436,6 +441,16 @@ export class KimiTUI {
     this.tasksBrowserController = new TasksBrowserController(this);
     this.editorKeyboard = new EditorKeyboardController(this, this.imageStore);
     this.editorKeyboard.install();
+    this.titleSpinner = new TerminalTitleSpinnerController({
+      setTitle: (label) => this.state.terminal.setTitle(label),
+      staticTitle: () => {
+        const trimmed = this.state.appState.sessionTitle?.trim() ?? '';
+        return trimmed.length > 0 ? trimmed.slice(0, MAX_TERMINAL_TITLE_LENGTH) : PRODUCT_NAME;
+      },
+      isBusy: () =>
+        this.state.appState.streamingPhase !== 'idle' || this.state.appState.isCompacting,
+      streamingPhase: () => this.state.appState.streamingPhase,
+    });
     this.buildLayout();
   }
 
@@ -558,6 +573,7 @@ export class KimiTUI {
             return;
           }
           const shouldReplayHistory = await this.initMainTui();
+          this.refreshTerminalMouseTracking();
           this.startBackgroundFdAutocomplete();
           await this.finishStartup(shouldReplayHistory);
         } catch (error) {
@@ -654,6 +670,7 @@ export class KimiTUI {
     this.startClipboardImageHintController();
     this.terminalFocusTrackingDispose = installTerminalFocusTracking(this.state);
     this.refreshTerminalThemeTracking();
+    this.refreshTerminalMouseTracking();
   }
 
   private startClipboardImageHintController(): void {
@@ -857,6 +874,7 @@ export class KimiTUI {
     this.tasksBrowserController.close();
     this.btwPanelController.clear();
     this.stopActivitySpinner();
+    this.titleSpinner.dispose();
     this.streamingUI.disposeActiveCompactionBlock();
     this.streamingUI.resetToolUi();
     this.disposeTranscriptChildren();
@@ -976,6 +994,7 @@ export class KimiTUI {
 
   private disposeTerminalTracking(): void {
     this.stopTerminalThemeTracking();
+    this.suspendTerminalMouseTracking();
     this.clipboardImageHintController?.stop();
     this.clipboardImageHintController = undefined;
     this.terminalFocusTrackingDispose?.();
@@ -1561,6 +1580,7 @@ export class KimiTUI {
     if (busyChanged) {
       this.updateQueueDisplay();
       this.sessionEventHandler.retryQueuedGoalPromotion();
+      this.titleSpinner.sync();
     }
     if (additionalDirsChanged) this.setupAutocomplete();
     this.state.ui.requestRender();
@@ -1740,9 +1760,7 @@ export class KimiTUI {
   }
 
   updateTerminalTitle(): void {
-    const trimmed = this.state.appState.sessionTitle?.trim() ?? '';
-    const label = trimmed.length > 0 ? trimmed.slice(0, MAX_TERMINAL_TITLE_LENGTH) : PRODUCT_NAME;
-    this.state.terminal.setTitle(label);
+    this.titleSpinner.sync();
   }
 
   resetSessionRuntime(): void {
@@ -2751,6 +2769,20 @@ export class KimiTUI {
     this.terminalThemeTrackingDispose = undefined;
   }
 
+  suspendTerminalMouseTracking(): void {
+    this.terminalMouseTrackingDispose?.();
+    this.terminalMouseTrackingDispose = undefined;
+  }
+
+  refreshTerminalMouseTracking(): void {
+    this.suspendTerminalMouseTracking();
+    if (this.isShuttingDown) return;
+    if (!isExperimentalFlagEnabled('terminal_mouse_input')) return;
+    if (!this.state.ui.children.includes(this.state.editorContainer)) return;
+    if (!this.state.editorContainer.children.includes(this.state.editor)) return;
+    this.terminalMouseTrackingDispose = installEditorMouseTracking(this.state);
+  }
+
   private async applyResolvedAutoTheme(resolved: ResolvedTheme): Promise<void> {
     if (this.state.appState.theme !== 'auto') return;
     const palette = getBuiltInPalette(resolved);
@@ -2827,6 +2859,8 @@ export class KimiTUI {
   // =========================================================================
 
   mountEditorReplacement(panel: Component & Focusable): void {
+    this.suspendTerminalMouseTracking();
+    this.state.editor.clearSelection();
     this.state.editorContainer.clear();
     this.state.editorContainer.addChild(panel);
     this.state.ui.setFocus(panel);
@@ -2837,6 +2871,7 @@ export class KimiTUI {
     this.state.editorContainer.clear();
     this.state.editorContainer.addChild(this.state.editor);
     this.state.ui.setFocus(this.state.editor);
+    this.refreshTerminalMouseTracking();
     // Measure overflow against the restored tree (editor mounted), not the tall
     // panel just removed — otherwise a short session with a tall panel looks like
     // it overflows and we take a full clear/home that yanks the editor to the top.

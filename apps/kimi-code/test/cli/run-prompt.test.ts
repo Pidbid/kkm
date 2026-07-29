@@ -99,7 +99,7 @@ const mocks = vi.hoisted(() => {
           );
           return;
         }
-        stderr.write(`kimi version ${version}\n`);
+        stderr.write(`kkm version ${version}\n`);
         stdout.write('• hello world\n\n');
         stderr.write('To resume this session: kkm -r ses_prompt\n');
       },
@@ -324,6 +324,23 @@ describe('runPrompt', () => {
     await expect(
       runPrompt(opts(), '1.2.3-test', { stdout, stderr, process: fakeProcess() }),
     ).rejects.toThrow('close failed');
+  });
+
+  it('reports telemetry shutdown failure without changing a successful result', async () => {
+    const stdout = writer();
+    const stderr = writer();
+    mocks.shutdownTelemetry.mockRejectedValueOnce(
+      new Error('telemetry unavailable'),
+    );
+
+    await expect(
+      runPrompt(opts(), '1.2.3-test', { stdout, stderr, process: fakeProcess() }),
+    ).resolves.toBeUndefined();
+
+    expect(stderr.text()).toContain(
+      'Warning: telemetry shutdown failed: telemetry unavailable',
+    );
+    expect(mocks.harnessClose).toHaveBeenCalledOnce();
   });
 
   it('ignores a cleanup rejection that lands after the timeout', async () => {
@@ -1304,8 +1321,8 @@ describe('runPrompt', () => {
     // first write, ahead of any assistant output or the resume hint.
     expect(mocks.runV2Print).toHaveBeenCalled();
     expect(mocks.kimiHarnessConstructor).not.toHaveBeenCalled();
-    expect(stderr.write).toHaveBeenNthCalledWith(1, 'kimi version 1.2.3-test\n');
-    expect(stderr.text().startsWith('kimi version 1.2.3-test\n')).toBe(true);
+    expect(stderr.write).toHaveBeenNthCalledWith(1, 'kkm version 1.2.3-test\n');
+    expect(stderr.text().startsWith('kkm version 1.2.3-test\n')).toBe(true);
     expect(stdout.text()).toBe('• hello world\n\n');
   });
 

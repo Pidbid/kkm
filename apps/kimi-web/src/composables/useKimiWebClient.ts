@@ -844,6 +844,7 @@ function applyEvent(event: ReturnType<typeof toAppEvent>, sessionId: string, seq
 
   if (event.type === 'configChanged') {
     rawState.defaultModel = event.config.defaultModel ?? null;
+    void modelProvider.refreshLoadedSkills();
   }
 
   if (event.type === 'modelCatalogChanged') {
@@ -2873,6 +2874,7 @@ export function useKimiWebClient() {
 
     sendPrompt: workspaceState.sendPrompt,
     steerPrompt: workspaceState.steerPrompt,
+    steerQueuedPrompt: workspaceState.steerQueuedPrompt,
     // Side chat (BTW side-channel agent)
     sideChatVisible: sideChat.sideChatVisible,
     sideChatSessionId: sideChat.sideChatSessionId,

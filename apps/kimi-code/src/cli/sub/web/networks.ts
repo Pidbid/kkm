@@ -23,7 +23,15 @@ export interface NetworkAddress {
  */
 export function listNetworkAddresses(): NetworkAddress[] {
   const raw: NetworkAddress[] = [];
-  for (const entries of Object.values(networkInterfaces())) {
+  let interfaces: ReturnType<typeof networkInterfaces>;
+  try {
+    interfaces = networkInterfaces();
+  } catch {
+    // Some restricted containers do not expose interface metadata. Network
+    // hints are optional, so keep the server usable and omit them.
+    return [];
+  }
+  for (const entries of Object.values(interfaces)) {
     for (const info of entries ?? []) {
       if (info.internal) {
         continue;

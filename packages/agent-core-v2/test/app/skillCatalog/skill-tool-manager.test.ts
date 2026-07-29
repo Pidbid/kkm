@@ -165,12 +165,21 @@ describe('ToolManager SkillTool registration with a structural catalog', () => {
     skills = {
       getSkill: (name) => (name === skill.name ? skill : undefined),
       getPluginSkill: () => undefined,
+      resolveSkill: (name) =>
+        name === skill.name
+          ? { kind: 'resolved', skill, canonicalName: skill.name }
+          : { kind: 'not-found' },
       renderSkillPrompt: () => skill.content,
       listSkills: () => [skill],
       listInvocableSkills: () => [skill],
       getSkillRoots: () => ['/skills/review'],
       getSkippedByPolicy: () => [],
+      getModelSkillDisclosure: () => ({
+        names: ['review'],
+        listing: '- review: desc for review',
+      }),
       getModelSkillListing: () => '- review: desc for review',
+      isSkillDisabled: () => false,
     };
     ctx = createTestAgent(skillServices(skills));
     profile = ctx.get(IAgentProfileService);

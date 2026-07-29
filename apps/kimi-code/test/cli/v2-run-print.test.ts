@@ -262,9 +262,31 @@ describe('runV2Print', () => {
       },
     });
     // Version banner is first, then the rendered assistant output.
-    expect(stderr.write).toHaveBeenNthCalledWith(1, 'kimi version 1.2.3-test\n');
+    expect(stderr.write).toHaveBeenNthCalledWith(1, 'kkm version 1.2.3-test\n');
     expect(stdout.text()).toContain('hello world');
     expect(app.dispose).toHaveBeenCalled();
+  });
+
+  it('preserves a successful print result when telemetry shutdown rejects', async () => {
+    const stdout = writer();
+    const stderr = writer();
+    const { app, agent, appServices } = makeFakeHarness();
+    const telemetry = appServices.get(ITelemetryService) as {
+      shutdown: ReturnType<typeof vi.fn>;
+    };
+    telemetry.shutdown.mockRejectedValue(new Error('telemetry unavailable'));
+    mocks.bootstrap.mockReturnValue({ app });
+    mocks.ensureMainAgent.mockResolvedValue(agent);
+
+    await expect(
+      runV2Print(opts() as never, '1.2.3-test', { stdout, stderr }),
+    ).resolves.toBeUndefined();
+
+    expect(telemetry.shutdown).toHaveBeenCalledOnce();
+    expect(app.dispose).toHaveBeenCalledOnce();
+    expect(stderr.text()).toContain(
+      'Warning: telemetry shutdown failed: telemetry unavailable',
+    );
   });
 
   it('seeds explicit skill dirs from --skillsDir into bootstrap', async () => {

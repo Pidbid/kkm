@@ -30,6 +30,7 @@ import {
   type ToolArgsValidator,
 } from '#/tool/args-validator';
 import { normalizeToolArgs, type ArgCoercion } from '#/tool/args-normalize';
+import { parseToolCallArguments } from '#/tool/tool-args-parse';
 import { PathSecurityError } from '#/tool/path-access';
 import { isAbortError, isUserCancellation } from '#/_base/utils/abort';
 import { IEventBus } from '#/app/event/eventBus';
@@ -608,7 +609,7 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
       trace: options.trace,
       toolCall: call.toolCall,
       toolCalls: [call.toolCall],
-      tool: call.tool,
+      tool: call.kind === 'runnable' ? call.tool : undefined,
       args: call.args,
       result: result as ExecutableToolResult,
     };
@@ -783,24 +784,6 @@ function preflightToolCall(
         ? coercionNote(toolName, normalization.coercions)
         : undefined,
   };
-}
-
-export function parseToolCallArguments(raw: unknown): {
-  readonly data: unknown;
-  readonly parseFailed: boolean;
-  readonly error?: string;
-} {
-  if (raw === null || raw === undefined || (typeof raw === 'string' && raw.length === 0)) {
-    return { data: {}, parseFailed: false };
-  }
-  if (typeof raw !== 'string') {
-    return { data: raw, parseFailed: false };
-  }
-  try {
-    return { data: JSON.parse(raw) as unknown, parseFailed: false };
-  } catch (error) {
-    return { data: {}, parseFailed: true, error: errorMessage(error) };
-  }
 }
 
 function coercionNote(toolName: string, coercions: readonly ArgCoercion[]): string {

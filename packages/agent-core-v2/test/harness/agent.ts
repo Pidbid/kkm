@@ -6,6 +6,7 @@ import { createControlledPromise } from '@antfu/utils';
 import { expect, vi } from 'vitest';
 
 import { toDisposable } from '#/_base/di/lifecycle';
+import { Error2, ErrorCodes } from '#/errors';
 import type { IAgentScopeHandle } from '#/_base/di/scope';
 import { Emitter, Event } from '#/_base/event';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
@@ -15,6 +16,7 @@ import type { AgentTaskInfo } from '#/agent/task/task';
 import { IAgentBlobService } from '#/agent/blob/agentBlobService';
 import { AgentBlobServiceImpl } from '#/agent/blob/agentBlobServiceImpl';
 import { IHostEnvironment } from '#/os/interface/hostEnvironment';
+import type { HostFsChange } from '#/os/interface/hostFsWatch';
 import { IAgentContextInjectorService } from '#/agent/contextInjector/contextInjector';
 import { CHECKPOINTED_MODELS, type Checkpointed } from '#/agent/contextMemory/conversationTime';
 import type { ContextMessage } from '#/agent/contextMemory/types';
@@ -119,6 +121,7 @@ import {
   AgentSwarmService,
   ITelemetryService,
   IHostTerminalService,
+  IHostFsWatchService,
   IAgentToolRegistryService,
   IAgentToolActivationService,
   IAgentUserToolService,
@@ -711,6 +714,7 @@ function createSessionSkillCatalog(catalog: SkillCatalog): ISessionSkillCatalog 
     onDidChange: Event.None as Event<string>,
     load: async () => { },
     reload: async () => { },
+    awaitPendingReloads: async () => { },
   };
 }
 
@@ -1096,6 +1100,9 @@ export class AgentTestContext {
             );
           }
           reg.defineInstance(IHostTerminalService, createHostTerminalService());
+          // Real fs watching belongs outside the harness: sessions otherwise
+          // spin up chokidar handles on candidate skill roots for every test.
+          reg.defineInstance(IHostFsWatchService, createHostFsWatchService());
           reg.defineInstance(
             IHostEnvironment,
             {
@@ -2134,7 +2141,7 @@ function createWorkspaceContextStub(
     assertAllowed: (absPath: string, op: PathAccessOperation) => {
       const target = isAbsolute(absPath) ? resolve(absPath) : resolve(workDir, absPath);
       if (!isWithin(target)) {
-        throw new Error(`Path outside workspace (${op}): ${target}`);
+        throw new Error2(ErrorCodes.FS_PATH_ESCAPES, `Path outside workspace (${op}): ${target}`);
       }
       return target;
     },
@@ -2191,6 +2198,17 @@ function createHostTerminalService(): IHostTerminalService {
       write: () => { },
       resize: () => { },
       kill: () => { },
+    }),
+  };
+}
+
+function createHostFsWatchService(): IHostFsWatchService {
+  return {
+    _serviceBrand: undefined,
+    watch: () => ({
+      ready: Promise.resolve(),
+      onDidChange: Event.None as Event<HostFsChange>,
+      dispose: () => { },
     }),
   };
 }

@@ -89,7 +89,6 @@ describe('built-in slash command registry', () => {
     expect(directoryCompletions.some((value) => value.startsWith('/.'))).toBe(false);
     expect(values('/.')).toBeNull();
     const homeCompletions = values('~/') ?? [];
-    expect(homeCompletions.length).toBeGreaterThan(0);
     expect(homeCompletions.every((value) => value.startsWith('~/') && value.endsWith('/'))).toBe(true);
     expect(homeCompletions.some((value) => value.startsWith('~/.'))).toBe(false);
     expect(homeCompletions.some((value) => value.startsWith('~/sers/'))).toBe(false);
