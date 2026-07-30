@@ -124,6 +124,7 @@ export interface ActivateSkillRpcInput extends SessionIdRpcInput {
   readonly additionalSkills?: readonly {
     readonly name: string;
     readonly args?: string | undefined;
+    readonly activationId?: string;
   }[];
   readonly prompt?: PromptInput;
   readonly activationId?: string;

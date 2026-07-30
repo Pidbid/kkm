@@ -20,7 +20,7 @@ export class SkillManager {
 
   activate(input: ActivateSkillPayload): void {
     const requests: readonly SkillActivationRequest[] = [
-      { name: input.name, args: input.args },
+      { name: input.name, args: input.args, activationId: input.activationId },
       ...(input.additionalSkills ?? []),
     ];
     const activations = requests.map((request) => this.prepareActivation(request));

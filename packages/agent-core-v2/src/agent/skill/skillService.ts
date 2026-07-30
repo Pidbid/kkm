@@ -54,7 +54,7 @@ export class AgentSkillService extends Disposable implements IAgentSkillService 
   async activate(input: SkillActivationInput): Promise<Turn> {
     await this.skillCatalog.ready;
     const requests: readonly SkillActivationRequest[] = [
-      { name: input.name, args: input.args },
+      { name: input.name, args: input.args, activationId: input.activationId },
       ...(input.additionalSkills ?? []),
     ];
     const activations = requests.map((request) => this.prepareActivation(request));

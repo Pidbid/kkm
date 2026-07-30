@@ -567,7 +567,7 @@ export class Agent {
   }
 
   /**
-    * Replace the enabled plugins' system-prompt contributions. Does not
+   * Replace the enabled plugins' system-prompt contributions. Does not
    * re-render on its own — pair with `refreshSystemPrompt()` so callers decide
    * when the prompt-cache prefix is invalidated.
    */

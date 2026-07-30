@@ -86,7 +86,7 @@ export interface AcpSessionInteractionHandlers {
   readonly approval: (request: ApprovalRequest) => Promise<ApprovalResponse>;
   readonly question: (
     request: QuestionRequest,
-  ) => Promise<QuestionAnswers | null>;
+  ) => Promise<QuestionResult>;
 }
 
 const interactionHandlersBySession = new WeakMap<

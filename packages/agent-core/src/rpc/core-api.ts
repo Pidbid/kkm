@@ -321,6 +321,7 @@ export interface ActivateSkillPayload {
 export interface SkillActivationRequest {
   readonly name: string;
   readonly args?: string | undefined;
+  readonly activationId?: string;
 }
 
 export interface ListWorkspaceSkillsPayload {

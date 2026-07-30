@@ -155,6 +155,8 @@ function controllerRig(options: {
     backgroundTasks,
     session,
     showError: vi.fn(),
+    suspendTerminalMouseTracking: vi.fn(),
+    refreshTerminalMouseTracking: vi.fn(),
     setTasksBrowser(value) {
       browser = value;
     },
