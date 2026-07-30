@@ -23,6 +23,7 @@ import {
   PROMPT_CLEANUP_TIMEOUT_MS,
 } from '#/constant/app';
 
+import { resolveAgentProfileSelection } from './agent-selection';
 import { isKimiV2Enabled } from './experimental-v2';
 import { drainStdio } from './headless-exit';
 import { resolveOutputFormat } from './options';
@@ -332,6 +333,9 @@ async function resolvePromptSession(
   stderr: PromptOutput,
   setRestorePermission: (restorePermission: () => Promise<void>) => void,
 ): Promise<ResolvedPromptSession> {
+  // `--agent`/`--agent-file` are creation-only: validateOptions rejects them
+  // together with --session/--continue, so resume paths never forward a
+  // profile — the bound agent is restored from the session itself.
   if (opts.session !== undefined) {
     const sessions = await harness.listSessions({ sessionId: opts.session, workDir });
     const target = sessions[0];
@@ -401,12 +405,15 @@ async function resolvePromptSession(
     stderr.write(`No sessions to continue under "${workDir}"; starting a fresh session.\n`);
   }
 
+  const agentProfile = await resolveAgentProfileSelection(opts, workDir);
   const model = requireConfiguredModel(opts.model, defaultModel);
   const session = await harness.createSession({
     workDir,
     model,
     permission: 'auto',
     additionalDirs: opts.addDirs?.length ? opts.addDirs : undefined,
+    agentProfile,
+    agentFiles: opts.agentFiles?.length ? opts.agentFiles : undefined,
     drainAgentTasksOnStop: true,
   });
   installHeadlessHandlers(session);

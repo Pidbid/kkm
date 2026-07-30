@@ -7,17 +7,20 @@ import {
   collectLoadedDynamicToolNames,
 } from '../context/dynamic-tools';
 import type { ContextMessage } from '../context/types';
-import { makeErrorPayload } from '../../errors';
+import { ErrorCodes, KimiError, makeErrorPayload } from '../../errors';
 import type { ExecutableTool, ToolUpdate } from '../../loop';
+import { errorMessage, isAbortError } from '../../loop/errors';
 import { createMcpAuthTool } from '../../mcp/auth-tool';
+import { isMcpSessionInvalidError } from '../../mcp/client-shared';
 import type { McpConnectionManager, McpServerEntry } from '../../mcp';
 import { mcpResultToExecutableOutput } from '../../mcp/output';
 import { isMcpToolName, qualifyMcpToolName } from '../../mcp/tool-naming';
-import type { MCPClient, MCPToolDefinition } from '../../mcp/types';
-import { DEFAULT_AGENT_PROFILES } from '../../profile';
+import type { MCPClient, MCPToolDefinition, MCPToolResult } from '../../mcp/types';
 import { resolveSubagentTimeoutMs } from '../../session/subagent-host';
+import { buildSubagentModelDescriptions } from '../../session/subagent-binding';
 import { extendWorkspaceWithSkillRoots } from '../../skill';
 import { estimateTokensForTools } from '../../utils/tokens';
+import { abortable } from '../../utils/abort';
 import { fingerprint } from '../llm-request-logger';
 import * as b from '../../tools/builtin';
 import type { ToolStore, ToolStoreData, ToolStoreKey } from '../../tools/store';
@@ -57,6 +60,13 @@ export class ToolManager {
   protected enabledTools: Set<string> = new Set();
   /** Glob patterns (e.g. `mcp__*`, `mcp__github__*`) gating which MCP tools the profile exposes. */
   private mcpAccessPatterns: string[] = [];
+  /**
+   * Exact builtin/user tool names the profile denies, evaluated on top of the
+   * allowlist result (`enabledTools`).
+   */
+  private disabledTools: Set<string> = new Set();
+  /** Glob patterns (`mcp__…`) the profile denies, evaluated on top of `mcpAccessPatterns`. */
+  private mcpDenyPatterns: string[] = [];
   /**
    * Defer-window lead for the loaded-tools ledger: names marked loaded whose
    * schema message may still sit in the context's deferred queue (an open tool
@@ -321,11 +331,30 @@ export class ToolManager {
               // `args` has already been JSON-parsed and schema-validated by
               // the loop's preflight (`loop/tool-call.ts`), so the MCP
               // client gets a plain object directly.
-              const result = await client.callTool(
-                tool.name,
-                (args ?? {}) as Record<string, unknown>,
+              const toolArgs = (args ?? {}) as Record<string, unknown>;
+              const callClient = await this.resolveMcpClientForCall(
+                serverName,
+                client,
                 context.signal,
               );
+              let result: MCPToolResult;
+              try {
+                result = await callClient.callTool(tool.name, toolArgs, context.signal);
+              } catch (error) {
+                if (isMcpSessionInvalidError(error)) {
+                  result = await this.retryAfterMcpSessionInvalidation(
+                    serverName,
+                    callClient,
+                    tool.name,
+                    toolArgs,
+                    context.signal,
+                    context.onUpdate,
+                    error,
+                  );
+                } else {
+                  throw error;
+                }
+              }
               return mcpResultToExecutableOutput(result, qualified, {
                 originalsDir: this.agent.mediaOriginalsDir,
                 telemetry: this.agent.telemetry,
@@ -341,6 +370,88 @@ export class ToolManager {
     }
     this.mcpToolsByServer.set(serverName, qualifiedNames);
     return { registered: qualifiedNames, collisions };
+  }
+
+  private async resolveMcpClientForCall(
+    serverName: string,
+    registeredClient: MCPClient,
+    signal: AbortSignal,
+  ): Promise<MCPClient> {
+    const mcp = this.agent.mcp;
+    if (mcp === undefined) return registeredClient;
+    const reconnect = mcp.inFlightReconnect(serverName);
+    if (reconnect !== undefined) {
+      await abortable(reconnect, signal);
+    }
+    const currentClient = mcp.resolved(serverName)?.client;
+    if (currentClient === undefined) {
+      throw new KimiError(
+        ErrorCodes.MCP_STARTUP_FAILED,
+        `MCP server is not connected: ${serverName}`,
+      );
+    }
+    return currentClient;
+  }
+
+  private async retryAfterMcpSessionInvalidation(
+    serverName: string,
+    staleClient: MCPClient,
+    toolName: string,
+    args: Record<string, unknown>,
+    signal: AbortSignal,
+    onUpdate: ((update: ToolUpdate) => void) | undefined,
+    sessionError: Error,
+  ): Promise<MCPToolResult> {
+    signal.throwIfAborted();
+    const originalError = sessionError.cause instanceof Error ? sessionError.cause : sessionError;
+    const mcp = this.agent.mcp;
+    if (mcp === undefined) throw originalError;
+
+    onUpdate?.({ kind: 'status', text: 'MCP session expired — reinitializing…' });
+    let freshClient: MCPClient | undefined;
+    try {
+      freshClient = await abortable(
+        this.joinHealedOrReconnectMcpServer(mcp, serverName, staleClient),
+        signal,
+      );
+    } catch (reconnectError) {
+      if (signal.aborted || isAbortError(reconnectError)) throw reconnectError;
+      throw new Error(
+        `${originalError.message} (reinitializing the MCP session also failed: ${errorMessage(reconnectError)})`,
+        { cause: reconnectError },
+      );
+    }
+    if (freshClient === undefined) throw originalError;
+
+    return this.callMcpToolAfterRecovery(freshClient, toolName, args, signal);
+  }
+
+  private async joinHealedOrReconnectMcpServer(
+    mcp: McpConnectionManager,
+    serverName: string,
+    staleClient: MCPClient,
+  ): Promise<MCPClient | undefined> {
+    const healed = mcp.resolved(serverName)?.client;
+    if (healed !== undefined && healed !== staleClient) return healed;
+    await mcp.reconnectAndJoin(serverName);
+    const current = mcp.resolved(serverName)?.client;
+    return current !== undefined && current !== staleClient ? current : undefined;
+  }
+
+  private async callMcpToolAfterRecovery(
+    client: MCPClient,
+    toolName: string,
+    args: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<MCPToolResult> {
+    try {
+      return await client.callTool(toolName, args, signal);
+    } catch (retryError) {
+      if (isMcpSessionInvalidError(retryError) && retryError.cause instanceof Error) {
+        throw retryError.cause;
+      }
+      throw retryError;
+    }
   }
 
   unregisterMcpServer(serverName: string): boolean {
@@ -399,8 +510,9 @@ export class ToolManager {
       serverName: entry.name,
       serverUrl,
       oauthService,
-      reconnect: async () => {
-        await mcp.reconnect(entry.name);
+      reconnect: async (signal) => {
+        const reconnect = mcp.reconnect(entry.name);
+        await (signal === undefined ? reconnect : abortable(reconnect, signal));
       },
     });
     this.mcpTools.set(tool.name, { tool, serverName: entry.name });
@@ -523,15 +635,18 @@ export class ToolManager {
     });
   }
 
-  setActiveTools(names: readonly string[]): void {
+  setActiveTools(names: readonly string[], disallowedNames?: readonly string[]): void {
     this.agent.records.logRecord({
       type: 'tools.set_active_tools',
       names,
+      disallowedNames,
     });
     // MCP entries are glob patterns gated separately; the rest are exact
     // builtin/user tool names. The split keeps every caller on one string[].
     this.enabledTools = new Set(names.filter((name) => !isMcpToolName(name)));
     this.mcpAccessPatterns = names.filter((name) => isMcpToolName(name));
+    this.disabledTools = new Set((disallowedNames ?? []).filter((name) => !isMcpToolName(name)));
+    this.mcpDenyPatterns = (disallowedNames ?? []).filter((name) => isMcpToolName(name));
     // Builtin construction reads the enabled set (Bash/Agent bake
     // `allowBackground` from the Task* trio), and the constructor may already
     // have built the map while the enabled set was still empty. The lazy
@@ -548,7 +663,15 @@ export class ToolManager {
   }
 
   private isMcpToolEnabled(name: string): boolean {
-    return this.mcpAccessPatterns.some((pattern) => picomatch.isMatch(name, pattern));
+    return (
+      this.mcpAccessPatterns.some((pattern) => picomatch.isMatch(name, pattern)) &&
+      !this.mcpDenyPatterns.some((pattern) => picomatch.isMatch(name, pattern))
+    );
+  }
+
+  /** An exact builtin/user tool name survives when allowed and not denied. */
+  private isExactToolEnabled(name: string): boolean {
+    return this.enabledTools.has(name) && !this.disabledTools.has(name);
   }
 
   /**
@@ -572,7 +695,7 @@ export class ToolManager {
       [...this.mcpTools.keys()].filter((name) => this.isMcpToolEnabled(name)),
     );
     for (const name of this.deferredUserTools) {
-      if (this.userTools.has(name) && this.enabledTools.has(name)) names.add(name);
+      if (this.userTools.has(name) && this.isExactToolEnabled(name)) names.add(name);
     }
     return [...names].toSorted((a, b) => a.localeCompare(b));
   }
@@ -633,7 +756,7 @@ export class ToolManager {
     return (
       this.deferredUserTools.has(name) &&
       this.userTools.has(name) &&
-      this.enabledTools.has(name)
+      this.isExactToolEnabled(name)
     );
   }
 
@@ -669,7 +792,7 @@ export class ToolManager {
    */
   getDynamicToolSchema(name: string): Tool | undefined {
     const userTool =
-      this.deferredUserTools.has(name) && this.enabledTools.has(name)
+      this.deferredUserTools.has(name) && this.isExactToolEnabled(name)
         ? this.userTools.get(name)
         : undefined;
     const mcpTool = this.isMcpToolEnabled(name) ? this.mcpTools.get(name)?.tool : undefined;
@@ -719,10 +842,13 @@ export class ToolManager {
         name: tool.name,
         description: tool.description,
         // select_tools is always registered but only offered while the
-        // disclosure gate is open (see loopTools); report that live state.
+        // disclosure gate is open and the denylist does not name it (see
+        // loopTools); report that live state.
         active:
-          this.enabledTools.has(tool.name) ||
-          (tool.name === b.SELECT_TOOLS_TOOL_NAME && this.agent.toolSelectEnabled),
+          this.isExactToolEnabled(tool.name) ||
+          (tool.name === b.SELECT_TOOLS_TOOL_NAME &&
+            this.agent.toolSelectEnabled &&
+            !this.disabledTools.has(tool.name)),
         source: 'builtin',
       };
     }
@@ -730,7 +856,7 @@ export class ToolManager {
       yield {
         name: tool.name,
         description: tool.description,
-        active: this.enabledTools.has(tool.name),
+        active: this.isExactToolEnabled(tool.name),
         source: 'user',
       };
     }
@@ -800,9 +926,9 @@ export class ToolManager {
       this.agent.skills?.registry.getSkillRoots() ?? [],
     );
     const allowBackground =
-      this.enabledTools.has('TaskList') &&
-      this.enabledTools.has('TaskOutput') &&
-      this.enabledTools.has('TaskStop');
+      this.isExactToolEnabled('TaskList') &&
+      this.isExactToolEnabled('TaskOutput') &&
+      this.isExactToolEnabled('TaskStop');
     const goalToolsEnabled = this.agent.type === 'main';
     this.builtinTools = new Map(
       [
@@ -855,11 +981,17 @@ export class ToolManager {
           new b.AgentTool(
             this.agent.subagentHost,
             background,
-            DEFAULT_AGENT_PROFILES['agent']?.subagents,
+            this.agent.subagentHost.delegatableSubagents(this.agent.config.profileName),
             {
               allowBackground,
               log: this.agent.log,
               subagentTimeoutMs: resolveSubagentTimeoutMs(this.agent.kimiConfig?.subagent?.timeoutMs),
+              showModelPreferences: this.agent.experimentalFlags.enabled('secondary-model'),
+              subagentModelDescription: buildSubagentModelDescriptions(
+                this.agent.kimiConfig,
+                this.agent.experimentalFlags,
+                this.agent.config.modelAlias,
+              ),
             },
           ),
         this.agent.subagentHost &&
@@ -867,6 +999,11 @@ export class ToolManager {
             this.agent.subagentHost,
             this.agent.swarmMode,
             resolveSubagentTimeoutMs(this.agent.kimiConfig?.subagent?.timeoutMs),
+            buildSubagentModelDescriptions(
+              this.agent.kimiConfig,
+              this.agent.experimentalFlags,
+              this.agent.config.modelAlias,
+            ),
           ),
         toolServices?.webSearcher && new b.WebSearchTool(toolServices.webSearcher),
         toolServices?.urlFetcher && new b.FetchURLTool(toolServices.urlFetcher),
@@ -985,15 +1122,24 @@ export class ToolManager {
     const loadedSet = disclosure ? this.loadedDynamicToolNames() : undefined;
     const enabledNames =
       loadedSet === undefined
-        ? [...this.enabledTools]
+        ? [...this.enabledTools].filter((name) => !this.disabledTools.has(name))
         : [...this.enabledTools].filter(
-            (name) => !this.deferredUserTools.has(name) || loadedSet.has(name),
+            (name) =>
+              !this.disabledTools.has(name) &&
+              (!this.deferredUserTools.has(name) || loadedSet.has(name)),
           );
     const mcpNames =
       loadedSet === undefined
         ? enabledMcpNames
         : enabledMcpNames.filter((name) => loadedSet.has(name));
-    const selectToolsName = disclosure ? [b.SELECT_TOOLS_TOOL_NAME] : [];
+    // The disclosure gate decides exposure, but the denylist still wins: a
+    // profile disallowedTools entry naming select_tools keeps it out of the
+    // table (mirrors agent-core-v2 isToolActiveForDisclosure, which applies
+    // the deny layers but not the allowlist to select_tools).
+    const selectToolsName =
+      disclosure && !this.disabledTools.has(b.SELECT_TOOLS_TOOL_NAME)
+        ? [b.SELECT_TOOLS_TOOL_NAME]
+        : [];
     return uniq([...enabledNames, ...selectToolsName, ...mcpNames])
       .toSorted((a, b) => a.localeCompare(b))
       // select_tools is exposed exclusively through the disclosure gate — a

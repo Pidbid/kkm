@@ -67,6 +67,7 @@ const MAIN_AGENT_ID = 'main';
 export interface SessionPromptRpcInput {
   readonly sessionId: string;
   readonly input: PromptInput;
+  readonly promptId?: string;
   /**
    * Client-managed session tool denylist (full-replace semantics), forwarded
    * to engines with profile tool gating. Omit to keep the persisted value;
@@ -123,8 +124,10 @@ export interface ActivateSkillRpcInput extends SessionIdRpcInput {
   readonly additionalSkills?: readonly {
     readonly name: string;
     readonly args?: string | undefined;
+    readonly activationId?: string;
   }[];
   readonly prompt?: PromptInput;
+  readonly activationId?: string;
 }
 
 export interface ActivatePluginCommandRpcInput extends SessionIdRpcInput {
@@ -139,11 +142,21 @@ export interface ReconnectMcpServerRpcInput extends SessionIdRpcInput {
 
 type ResolvedCoreAPI = RPCMethods<CoreAPI>;
 
+interface HandlerRegistration<T> {
+  readonly handler: T;
+}
+
 export abstract class SDKRpcClientBase {
   private readonly interactiveAgentScope = new AsyncLocalStorage<string>();
   private readonly eventListeners = new Set<(event: Event) => void>();
-  private readonly approvalHandlers = new Map<string, ApprovalHandler>();
-  private readonly questionHandlers = new Map<string, QuestionHandler>();
+  private readonly approvalHandlers = new Map<
+    string,
+    HandlerRegistration<ApprovalHandler>
+  >();
+  private readonly questionHandlers = new Map<
+    string,
+    HandlerRegistration<QuestionHandler>
+  >();
 
   get interactiveAgentId(): string {
     return this.interactiveAgentScope.getStore() ?? MAIN_AGENT_ID;
@@ -329,6 +342,7 @@ export abstract class SDKRpcClientBase {
       sessionId: input.sessionId,
       agentId,
       input: input.input,
+      promptId: input.promptId,
       disabledTools: input.disabledTools,
     });
   }
@@ -435,6 +449,11 @@ export abstract class SDKRpcClientBase {
       agentId: this.interactiveAgentId,
       effort: input.effort,
     });
+  }
+
+  async applyPersistedSecondaryModel(input: SessionIdRpcInput): Promise<void> {
+    const rpc = await this.getRpc();
+    return rpc.applyPersistedSecondaryModel({ sessionId: input.sessionId });
   }
 
   async setPermission(input: SetSessionPermissionRpcInput): Promise<void> {
@@ -788,6 +807,7 @@ export abstract class SDKRpcClientBase {
       args: input.args,
       additionalSkills: input.additionalSkills,
       prompt: input.prompt,
+      activationId: input.activationId,
     });
   }
 
@@ -820,7 +840,20 @@ export abstract class SDKRpcClientBase {
       this.approvalHandlers.delete(sessionId);
       return;
     }
-    this.approvalHandlers.set(sessionId, handler);
+    this.approvalHandlers.set(sessionId, { handler });
+  }
+
+  registerApprovalHandler(sessionId: string, handler: ApprovalHandler): Unsubscribe {
+    const registration = { handler };
+    this.approvalHandlers.set(sessionId, registration);
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      if (this.approvalHandlers.get(sessionId) === registration) {
+        this.approvalHandlers.delete(sessionId);
+      }
+    };
   }
 
   setQuestionHandler(sessionId: string, handler: QuestionHandler | undefined): void {
@@ -828,7 +861,20 @@ export abstract class SDKRpcClientBase {
       this.questionHandlers.delete(sessionId);
       return;
     }
-    this.questionHandlers.set(sessionId, handler);
+    this.questionHandlers.set(sessionId, { handler });
+  }
+
+  registerQuestionHandler(sessionId: string, handler: QuestionHandler): Unsubscribe {
+    const registration = { handler };
+    this.questionHandlers.set(sessionId, registration);
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      if (this.questionHandlers.get(sessionId) === registration) {
+        this.questionHandlers.delete(sessionId);
+      }
+    };
   }
 
   clearSessionHandlers(sessionId: string): void {
@@ -839,8 +885,8 @@ export abstract class SDKRpcClientBase {
   async requestApproval(
     request: ApprovalRequest & { sessionId: string; agentId: string },
   ): Promise<ApprovalResponse> {
-    const handler = this.approvalHandlers.get(request.sessionId);
-    if (handler === undefined) {
+    const registration = this.approvalHandlers.get(request.sessionId);
+    if (registration === undefined) {
       return {
         decision: 'cancelled',
         feedback: 'No approval handler registered.',
@@ -848,7 +894,7 @@ export abstract class SDKRpcClientBase {
     }
 
     try {
-      return await handler(request);
+      return await registration.handler(request);
     } catch (error) {
       this.receiveEvent({
         type: 'error',
@@ -866,11 +912,11 @@ export abstract class SDKRpcClientBase {
   async requestQuestion(
     request: QuestionRequest & { sessionId: string; agentId: string },
   ): Promise<QuestionResult> {
-    const handler = this.questionHandlers.get(request.sessionId);
-    if (handler === undefined) return null;
+    const registration = this.questionHandlers.get(request.sessionId);
+    if (registration === undefined) return null;
 
     try {
-      return await handler(request);
+      return await registration.handler(request);
     } catch (error) {
       this.receiveEvent({
         type: 'error',

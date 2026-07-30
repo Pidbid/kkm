@@ -333,7 +333,7 @@ function updateActiveTocQuery(): void {
 
 // --- TOC occlusion by wide tables -------------------------------------------
 // Wide markdown tables (up to --p-table-max) can extend past the TOC rail,
-// which stays anchored to the reading-column edge. While a table actually
+// which stays anchored to the pane's right edge. While a table actually
 // covers the rail we hide the TOC temporarily so the table stays fully
 // interactive (clicks, text selection, horizontal scroll). The user's TOC
 // setting is untouched and the rail returns as soon as the table scrolls away.
@@ -355,7 +355,7 @@ function updateTocTableOcclusion(): void {
       ? pane.closest('.con')?.querySelector<HTMLElement>('.conversation-toc')
       : null;
   // The hit x is the centre of the fixed rail bar: `.toc-bar` keeps a stable x
-  // even when hover expands the labels rightward, so hovering the TOC itself
+  // even when hover expands the labels leftward, so hovering the TOC itself
   // never flips the state (the nav centre would).
   const bar = toc?.querySelector<HTMLElement>('.toc-bar');
   let covered = false;
@@ -424,7 +424,9 @@ const panesRef = ref<HTMLElement | null>(null);
 const dockRef = ref<HTMLElement | null>(null);
 const panesScrollbarWidth = ref(0);
 const dockHeight = ref(0);
-const chatDockStyle = computed(() => ({
+// Exposed on `.con` (not the dock alone) so the TOC rail can compensate for
+// the panes scrollbar gutter at the pane's right edge, just like the dock does.
+const conStyle = computed(() => ({
   '--panes-scrollbar-width': `${panesScrollbarWidth.value}px`,
 }));
 type ComposerHandle = {
@@ -1252,7 +1254,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
 </script>
 
 <template>
-  <section class="con" :class="{ mobile }">
+  <section class="con" :class="{ mobile }" :style="conStyle">
     <!-- Chat context header: workspace/session, git status, open-in-editor,
          copy-all, PR. Hidden for the empty-composer (no session context yet). -->
     <ChatHeader
@@ -1446,7 +1448,6 @@ defineExpose({ loadComposerForEdit, focusComposer });
       <ChatDock
         v-if="!(turns.length === 0 && !sessionLoading)"
         :ref="bindChatDock"
-        :style="chatDockStyle"
         :session-id="sessionId"
         :running="running"
         :starting="starting"
@@ -1533,7 +1534,9 @@ defineExpose({ loadComposerForEdit, focusComposer });
 
 <style scoped>
 .con {
-  --read-max: 760px;
+  /* The reading column follows the pane width — no fixed max-width cap, so
+     wide windows don't leave empty margins on both sides. */
+  --read-max: 100%;
   display: flex;
   flex-direction: column;
   min-width: 0;

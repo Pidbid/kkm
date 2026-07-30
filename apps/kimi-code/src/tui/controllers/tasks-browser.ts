@@ -6,6 +6,21 @@ import { TasksBrowserApp, type TasksFilter } from '../components/dialogs/tasks-b
 import type { Theme } from '#/tui/theme';
 import type { CustomEditor } from '../components/editor/custom-editor';
 
+const TASKS_POLL_INTERVAL_MS = 1_000;
+const PREVIEW_TAIL_CHARACTERS = 4_000;
+
+export interface TasksBrowserPolling {
+  start(callback: () => void, intervalMs: number): NodeJS.Timeout;
+  stop(timer: NodeJS.Timeout): void;
+}
+
+const DEFAULT_TASKS_BROWSER_POLLING: TasksBrowserPolling = {
+  start: (callback, intervalMs) => setInterval(callback, intervalMs),
+  stop: (timer) => {
+    clearInterval(timer);
+  },
+};
+
 export interface TasksBrowserHost {
   readonly state: {
     readonly tasksBrowser: TasksBrowserState | undefined;
@@ -28,8 +43,12 @@ export type TasksBrowserState = {
   filter: TasksFilter;
   selectedTaskId: string | undefined;
   tailOutput: string | undefined;
+  tailError: string | undefined;
   tailLoading: boolean;
   tailRequestId: number;
+  tailRequestTaskId: string | undefined;
+  tailReloadPending: boolean;
+  tailFinalReloadTaskId: string | undefined;
   flashMessage: string | undefined;
   flashTimer: NodeJS.Timeout | undefined;
   pollTimer: NodeJS.Timeout | undefined;
@@ -46,7 +65,10 @@ export type TasksBrowserState = {
 };
 
 export class TasksBrowserController {
-  constructor(private readonly host: TasksBrowserHost) {}
+  constructor(
+    private readonly host: TasksBrowserHost,
+    private readonly polling: TasksBrowserPolling = DEFAULT_TASKS_BROWSER_POLLING,
+  ) {}
 
   async show(): Promise<void> {
     const { state } = this.host;
@@ -71,12 +93,14 @@ export class TasksBrowserController {
 
     const filter: TasksFilter = 'all';
     const selectedTaskId = this.pickInitialSelection(tasks, filter);
+    const selectedTask = tasks.find((task) => task.taskId === selectedTaskId);
     const component = new TasksBrowserApp(
       {
         tasks,
         filter,
         selectedTaskId,
         tailOutput: undefined,
+        tailError: undefined,
         tailLoading: false,
         flashMessage: undefined,
         ...this.buildCallbacks(),
@@ -91,9 +115,9 @@ export class TasksBrowserController {
     state.ui.setFocus(component);
     state.ui.requestRender(true);
 
-    const pollTimer = setInterval(() => {
+    const pollTimer = this.polling.start(() => {
       void this.refresh({ silent: true });
-    }, 1000);
+    }, TASKS_POLL_INTERVAL_MS);
 
     this.host.setTasksBrowser({
       component,
@@ -101,8 +125,15 @@ export class TasksBrowserController {
       filter,
       selectedTaskId,
       tailOutput: undefined,
+      tailError: undefined,
       tailLoading: false,
       tailRequestId: 0,
+      tailRequestTaskId: undefined,
+      tailReloadPending: false,
+      tailFinalReloadTaskId:
+        selectedTask !== undefined && selectedTask.status !== 'running'
+          ? selectedTaskId
+          : undefined,
       flashMessage: undefined,
       flashTimer: undefined,
       pollTimer,
@@ -119,7 +150,7 @@ export class TasksBrowserController {
     const browser = state.tasksBrowser;
     if (browser === undefined) return;
     if (browser.viewer !== undefined) this.closeOutputViewer();
-    if (browser.pollTimer !== undefined) clearInterval(browser.pollTimer);
+    if (browser.pollTimer !== undefined) this.polling.stop(browser.pollTimer);
     if (browser.flashTimer !== undefined) clearTimeout(browser.flashTimer);
 
     state.ui.clear();
@@ -137,6 +168,18 @@ export class TasksBrowserController {
     if (browser === undefined) return;
     const tasks = [...this.host.backgroundTasks.values()];
     this.pushProps(tasks);
+    const selectedTask =
+      browser.selectedTaskId === undefined
+        ? undefined
+        : this.host.backgroundTasks.get(browser.selectedTaskId);
+    if (selectedTask === undefined) return;
+    if (selectedTask.status !== 'running') {
+      if (browser.tailFinalReloadTaskId === selectedTask.taskId) return;
+      browser.tailFinalReloadTaskId = selectedTask.taskId;
+    } else {
+      browser.tailFinalReloadTaskId = undefined;
+    }
+    this.reloadSelectedTail(browser, { queueIfBusy: true });
   }
 
   async refreshOutputViewer(opts: { silent?: boolean } = {}): Promise<void> {
@@ -198,7 +241,9 @@ export class TasksBrowserController {
     return candidates.find((t) => t.status === 'running')?.taskId ?? candidates[0]!.taskId;
   }
 
-  private async refresh(opts: { silent?: boolean } = {}): Promise<void> {
+  private async refresh(
+    opts: { silent?: boolean; reloadTail?: boolean } = {},
+  ): Promise<void> {
     const { state } = this.host;
     const browser = state.tasksBrowser;
     if (browser === undefined) return;
@@ -219,6 +264,21 @@ export class TasksBrowserController {
     }
     if (state.tasksBrowser !== browser) return;
     this.pushProps(tasks);
+    const selectedTask =
+      browser.selectedTaskId === undefined
+        ? undefined
+        : tasks.find((task) => task.taskId === browser.selectedTaskId);
+    const cachedSelectedTask =
+      browser.selectedTaskId === undefined
+        ? undefined
+        : this.host.backgroundTasks.get(browser.selectedTaskId);
+    if (
+      opts.reloadTail !== false &&
+      selectedTask?.status === 'running' &&
+      cachedSelectedTask?.status === 'running'
+    ) {
+      this.reloadSelectedTail(browser);
+    }
   }
 
   private pushProps(tasks: readonly BackgroundTaskInfo[]): void {
@@ -229,6 +289,7 @@ export class TasksBrowserController {
       filter: browser.filter,
       selectedTaskId: browser.selectedTaskId,
       tailOutput: browser.tailOutput,
+      tailError: browser.tailError,
       tailLoading: browser.tailLoading,
       flashMessage: browser.flashMessage,
       ...this.buildCallbacks(),
@@ -278,8 +339,13 @@ export class TasksBrowserController {
     if (browser.selectedTaskId === taskId) return;
     browser.selectedTaskId = taskId;
     browser.tailOutput = undefined;
+    browser.tailError = undefined;
     browser.tailLoading = true;
-    this.repaint();
+    browser.tailReloadPending = false;
+    const selectedTask = this.host.backgroundTasks.get(taskId);
+    browser.tailFinalReloadTaskId =
+      selectedTask !== undefined && selectedTask.status !== 'running' ? taskId : undefined;
+    this.pushProps([...this.host.backgroundTasks.values()]);
     this.loadTail(taskId);
   }
 
@@ -287,12 +353,15 @@ export class TasksBrowserController {
     const browser = this.host.state.tasksBrowser;
     if (browser === undefined) return;
     browser.filter = browser.filter === 'all' ? 'active' : 'all';
-    this.repaint();
+    this.pushProps([...this.host.backgroundTasks.values()]);
   }
 
   private handleRefresh(): void {
+    const browser = this.host.state.tasksBrowser;
+    if (browser === undefined) return;
     this.flash('Refreshing…', 600);
-    void this.refresh();
+    this.reloadSelectedTail(browser, { queueIfBusy: true });
+    void this.refresh({ reloadTail: false });
   }
 
   private async handleStop(taskId: string): Promise<void> {
@@ -359,7 +428,7 @@ export class TasksBrowserController {
 
     const pollTimer = setInterval(() => {
       void this.refreshOutputViewer({ silent: true });
-    }, 1000);
+    }, TASKS_POLL_INTERVAL_MS);
 
     browser.viewer = {
       component: viewer,
@@ -379,31 +448,58 @@ export class TasksBrowserController {
     const session = this.host.session;
     if (session === undefined) {
       browser.tailLoading = false;
-      this.repaint();
+      this.pushProps([...this.host.backgroundTasks.values()]);
       return;
     }
 
     const requestId = ++browser.tailRequestId;
+    browser.tailRequestTaskId = taskId;
     void session
-      .getBackgroundTaskOutput(taskId, { tail: 4000 })
+      .getBackgroundTaskOutput(taskId, { tail: PREVIEW_TAIL_CHARACTERS })
       .then((output) => {
         const current = state.tasksBrowser;
         if (current === undefined) return;
         if (current !== browser || current.tailRequestId !== requestId) return;
         if (current.selectedTaskId !== taskId) return;
         current.tailOutput = output;
+        current.tailError = undefined;
         current.tailLoading = false;
-        this.repaint();
+        this.finishTailLoad(current, taskId);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         const current = state.tasksBrowser;
         if (current === undefined) return;
         if (current !== browser || current.tailRequestId !== requestId) return;
         if (current.selectedTaskId !== taskId) return;
-        current.tailOutput = '';
+        current.tailError = error instanceof Error ? error.message : String(error);
         current.tailLoading = false;
-        this.repaint();
+        this.finishTailLoad(current, taskId);
       });
+  }
+
+  private finishTailLoad(browser: TasksBrowserState, taskId: string): void {
+    const reloadPending = browser.tailReloadPending;
+    browser.tailReloadPending = false;
+    browser.tailRequestTaskId = undefined;
+    this.pushProps([...this.host.backgroundTasks.values()]);
+    if (reloadPending && browser.selectedTaskId === taskId) {
+      this.loadTail(taskId);
+    }
+  }
+
+  private reloadSelectedTail(
+    browser: TasksBrowserState,
+    opts: { queueIfBusy?: boolean } = {},
+  ): void {
+    const taskId = browser.selectedTaskId;
+    if (taskId === undefined) return;
+    if (browser.tailRequestTaskId === taskId) {
+      if (opts.queueIfBusy === true) {
+        browser.tailReloadPending = true;
+      }
+      return;
+    }
+    this.loadTail(taskId);
   }
 
   private flash(message: string, durationMs = 2500): void {
@@ -416,9 +512,9 @@ export class TasksBrowserController {
       if (current !== browser) return;
       current.flashMessage = undefined;
       current.flashTimer = undefined;
-      this.repaint();
+      this.pushProps([...this.host.backgroundTasks.values()]);
     }, durationMs);
-    this.repaint();
+    this.pushProps([...this.host.backgroundTasks.values()]);
   }
 
   private closeOutputViewer(): void {

@@ -168,6 +168,12 @@ export interface TranscriptEntry {
   turnId?: string;
   renderMode: 'markdown' | 'plain' | 'notice';
   content: string;
+  /** Bounded presentation data for a completed foreground shell command. */
+  shellOutputDisplay?: {
+    readonly stdoutTail: string;
+    readonly stderrTail: string;
+    readonly isError?: boolean;
+  };
   /**
    * True only for entries holding real model-authored text (created by the
    * assistant stream). Derived cards — hook results, goal completions, goal
@@ -245,6 +251,10 @@ export interface TUIStartupOptions {
   readonly auto: boolean;
   readonly plan: boolean;
   readonly model?: string;
+  /** Resolved profile name from --agent/--agent-file; bound to the startup session only. */
+  readonly agentProfile?: string;
+  /** Raw --agent-file paths, passed to session creation alongside `agentProfile`. */
+  readonly agentFiles?: readonly string[];
   readonly startupNotice?: string;
 }
 

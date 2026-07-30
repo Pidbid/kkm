@@ -1,3 +1,9 @@
+/**
+ * Scenario: Agent builtin-tool behavior and the tool contract exposed to the LLM.
+ * Responsibilities: active-tool policy, tool execution, and observable descriptions/schemas.
+ * Wiring: real Agent and ToolManager with only process/model/subagent boundaries stubbed.
+ * Run: cd packages/agent-core && ../../node_modules/.bin/vitest run test/agent/tool.test.ts
+ */
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -92,6 +98,31 @@ describe('Agent tools', () => {
     expect(triggered).toEqual([['PostToolUse', 'Bash', 1]]);
   });
 
+  it('passes the current runtime permission mode to PreToolUse hooks', async () => {
+    const execWithEnv = vi.fn().mockRejectedValue(new Error('Bash boundary reached'));
+    const hookEngine = new HookEngine([
+      {
+        event: 'PreToolUse',
+        matcher: 'Bash',
+        command: hookPermissionModeAssertCommand('yolo'),
+      },
+    ]);
+    const ctx = testAgent({
+      kaos: createFakeKaos({ execWithEnv }),
+      hookEngine,
+    });
+    ctx.configure({ tools: ['Bash'] });
+    await ctx.rpc.setPermission({ mode: 'yolo' });
+
+    ctx.mockNextResponse({ type: 'text', text: 'I will run Bash.' }, bashCall());
+    ctx.mockNextResponse({ type: 'text', text: 'The Bash boundary failed.' });
+    await ctx.rpc.prompt({ input: [{ type: 'text', text: 'Run Bash' }] });
+
+    await ctx.untilTurnEnd();
+
+    expect(execWithEnv).toHaveBeenCalledOnce();
+  });
+
   it('uses builtin descriptions on tool call start events', async () => {
     const ctx = testAgent({
       kaos: createCommandKaos('ok'),
@@ -125,6 +156,7 @@ describe('Agent tools', () => {
         completion,
       }),
       resume: vi.fn(),
+      delegatableSubagents: vi.fn(() => ({})),
     } as unknown as SessionSubagentHost;
     const ctx = testAgent({ subagentHost });
     ctx.configure({ tools: ['Agent'] });
@@ -259,8 +291,99 @@ describe('Agent tools', () => {
     expect(managedBash!.description).toContain('run_in_background=true');
   });
 
+  it('disables Bash background mode when an active task management tool is denied', async () => {
+    const ctx = testAgent();
+    ctx.configure();
+    ctx.agent.tools.setActiveTools(
+      ['Bash', 'TaskList', 'TaskOutput', 'TaskStop'],
+      ['TaskOutput'],
+    );
+
+    const bash = ctx.agent.tools.loopTools.find((tool) => tool.name === 'Bash');
+    expect(bash).toBeDefined();
+    expect(bash!.description).toContain('Background execution is disabled for this agent.');
+    await expect(
+      executeTool(bash!, {
+        turnId: '0',
+        toolCallId: 'call_bash',
+        args: { command: 'sleep 10', run_in_background: true, description: 'watch' },
+        signal,
+      }),
+    ).resolves.toMatchObject({
+      isError: true,
+      output:
+        'Background execution is not available for this agent because TaskOutput and TaskStop are not enabled.',
+    });
+  });
+
+  it('disables Agent background mode when an active task management tool is denied', async () => {
+    const subagentHost = {
+      delegatableSubagents: vi.fn(() => ({})),
+      spawn: vi.fn(),
+    } as unknown as SessionSubagentHost;
+    const ctx = testAgent({ subagentHost });
+    ctx.configure();
+    ctx.agent.tools.setActiveTools(
+      ['Agent', 'TaskList', 'TaskOutput', 'TaskStop'],
+      ['TaskStop'],
+    );
+
+    const agent = ctx.agent.tools.loopTools.find((tool) => tool.name === 'Agent');
+    expect(agent).toBeDefined();
+    expect(agent!.description).toContain('Background agent execution is disabled for this agent.');
+    await expect(
+      executeTool(agent!, {
+        turnId: '0',
+        toolCallId: 'call_agent',
+        args: {
+          prompt: 'Investigate deeply',
+          description: 'Investigate deeply',
+          subagent_type: 'coder',
+          run_in_background: true,
+        },
+        signal,
+      }),
+    ).resolves.toMatchObject({
+      isError: true,
+      output:
+        'Background agent execution is not available for this agent because TaskList, TaskOutput, and TaskStop are not enabled.',
+    });
+    expect(subagentHost.spawn).not.toHaveBeenCalled();
+  });
+
+  it('removes denied exact tool names from the active set', () => {
+    const ctx = testAgent();
+    ctx.configure();
+    ctx.agent.tools.setActiveTools(['Read', 'Bash', 'Grep'], ['Bash']);
+
+    const names = ctx.agent.tools.loopTools.map((tool) => tool.name);
+    expect(names).not.toContain('Bash');
+    expect(names).toContain('Read');
+    expect(names).toContain('Grep');
+    expect(ctx.agent.tools.data().find((info) => info.name === 'Bash')?.active).toBe(false);
+  });
+
+  it('applies a profile disallowedTools denylist through useProfile', () => {
+    const ctx = testAgent();
+    ctx.configure();
+    ctx.agent.useProfile({
+      name: 'restricted',
+      systemPrompt: () => 'sys',
+      tools: ['Read', 'Write', 'Edit', 'Bash', 'Grep'],
+      disallowedTools: ['Write', 'Edit'],
+    });
+
+    const names = ctx.agent.tools.loopTools.map((tool) => tool.name);
+    expect(names).toContain('Read');
+    expect(names).toContain('Bash');
+    expect(names).not.toContain('Write');
+    expect(names).not.toContain('Edit');
+  });
+
   it('exposes AgentSwarm when a subagent host is available', () => {
-    const subagentHost = {} as unknown as SessionSubagentHost;
+    const subagentHost = {
+      delegatableSubagents: vi.fn(() => ({})),
+    } as unknown as SessionSubagentHost;
 
     const ctx = testAgent({
       subagentHost,
@@ -269,6 +392,52 @@ describe('Agent tools', () => {
     ctx.configure({ tools: ['AgentSwarm'] });
 
     expect(ctx.agent.tools.loopTools.some((tool) => tool.name === 'AgentSwarm')).toBe(true);
+  });
+
+  it('shows the model preference for a subagent type when the experiment is enabled', () => {
+    const subagentHost = {
+      delegatableSubagents: vi.fn(() => ({
+        coder: {
+          name: 'coder',
+          description: 'General coding.',
+          systemPrompt: () => 'coder prompt',
+          tools: ['Read'],
+          modelPreference: 'primary' as const,
+        },
+      })),
+    } as unknown as SessionSubagentHost;
+    const ctx = testAgent({
+      subagentHost,
+      experimentalFlags: new FlagResolver({}, FLAG_DEFINITIONS, { 'secondary-model': true }),
+    });
+    ctx.configure({ tools: ['Agent'] });
+
+    const description = ctx.agent.tools.loopTools.find((tool) => tool.name === 'Agent')?.description;
+
+    expect(description).toContain('- coder: General coding.\n  Model preference: primary');
+  });
+
+  it('hides model preferences when the experiment is disabled', () => {
+    const subagentHost = {
+      delegatableSubagents: vi.fn(() => ({
+        coder: {
+          name: 'coder',
+          description: 'General coding.',
+          systemPrompt: () => 'coder prompt',
+          tools: ['Read'],
+          modelPreference: 'primary' as const,
+        },
+      })),
+    } as unknown as SessionSubagentHost;
+    const ctx = testAgent({
+      subagentHost,
+      experimentalFlags: new FlagResolver({}, FLAG_DEFINITIONS),
+    });
+    ctx.configure({ tools: ['Agent'] });
+
+    const description = ctx.agent.tools.loopTools.find((tool) => tool.name === 'Agent')?.description;
+
+    expect(description).not.toContain('Model preference:');
   });
 
   it('self-heals the builtin tool table when the provider becomes resolvable after construction', () => {
@@ -562,6 +731,20 @@ function hookErrorMessageAssertCommand(expected: string): string {
     '  const payload = JSON.parse(input);',
     `  if (payload.error?.message === ${JSON.stringify(expected)}) process.exit(0);`,
     "  console.error(payload.error?.message ?? '<missing>');",
+    '  process.exit(2);',
+    '});',
+  ].join('');
+  return `node -e ${JSON.stringify(script)}`;
+}
+
+function hookPermissionModeAssertCommand(expected: string): string {
+  const script = [
+    "let input = '';",
+    "process.stdin.on('data', (chunk) => { input += chunk; });",
+    "process.stdin.on('end', () => {",
+    '  const payload = JSON.parse(input);',
+    `  if (payload.permission_mode === ${JSON.stringify(expected)}) process.exit(0);`,
+    "  console.error(payload.permission_mode ?? '<missing>');",
     '  process.exit(2);',
     '});',
   ].join('');

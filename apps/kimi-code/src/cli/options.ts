@@ -1,7 +1,3 @@
-import { CLI_COMMAND_NAME } from '#/constant/app';
-
-import { isKimiV2Enabled } from './experimental-v2';
-
 export type UIMode = 'shell' | 'print';
 export type PromptOutputFormat = 'text' | 'stream-json';
 
@@ -103,10 +99,10 @@ export function validateOptions(
   }
   if (
     (opts.agent !== undefined || opts.agentFiles.length > 0) &&
-    (!promptMode || !isKimiV2Enabled(env))
+    (opts.session !== undefined || opts.continue)
   ) {
     throw new OptionConflictError(
-      `--agent/--agent-file are only available with the v2 engine (${CLI_COMMAND_NAME} -p with KIMI_CODE_EXPERIMENTAL_FLAG=1).`,
+      'Cannot combine --agent/--agent-file with --session/--continue: the agent is bound at session creation and the bound agent is restored automatically on resume.',
     );
   }
   if (promptMode && opts.session === '') {

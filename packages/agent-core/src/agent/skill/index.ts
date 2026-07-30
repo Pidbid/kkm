@@ -20,7 +20,7 @@ export class SkillManager {
 
   activate(input: ActivateSkillPayload): void {
     const requests: readonly SkillActivationRequest[] = [
-      { name: input.name, args: input.args },
+      { name: input.name, args: input.args, activationId: input.activationId },
       ...(input.additionalSkills ?? []),
     ];
     const activations = requests.map((request) => this.prepareActivation(request));
@@ -82,7 +82,7 @@ export class SkillManager {
     return {
       origin: {
         kind: 'skill_activation',
-        activationId: randomUUID(),
+        activationId: input.activationId ?? randomUUID(),
         skillName: skill.name,
         trigger: 'user-slash',
         skillType: skill.metadata.type,

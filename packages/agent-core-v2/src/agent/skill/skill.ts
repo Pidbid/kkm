@@ -6,6 +6,7 @@ import type { ContentPart } from '#/kosong/contract/message';
 export interface SkillActivationRequest {
   readonly name: string;
   readonly args?: string;
+  readonly activationId?: string;
 }
 
 export interface SkillActivationInput extends SkillActivationRequest {

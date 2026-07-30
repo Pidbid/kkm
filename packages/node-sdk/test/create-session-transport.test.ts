@@ -1,10 +1,23 @@
+/**
+ * Scenario: KimiHarness session creation and resume transport behavior.
+ * Responsibilities: SDK options reach the in-process core and session identity remains stable.
+ * Wiring: the real SDK/core are used; model/network boundaries are configured but never called.
+ * Run: pnpm -C packages/node-sdk exec vitest run test/create-session-transport.test.ts
+ */
+
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { Kaos } from '@moonshot-ai/kaos';
-import { createKimiHarness, KimiHarness } from '#/index';
+import {
+  createKimiHarness,
+  KimiHarness,
+  type ApprovalHandler,
+  type Event,
+  type QuestionHandler,
+} from '#/index';
 import type { KimiError } from '#/index';
 import type { ResumeSessionInput, ResumedSessionSummary } from '#/types';
 import { SDKRpcClientBase } from '#/rpc';
@@ -51,6 +64,16 @@ max_context_size = 1000
   );
 }
 
+async function writeReviewerAgent(workDir: string): Promise<void> {
+  const agentDir = join(workDir, '.kimi-code', 'agents');
+  await mkdir(agentDir, { recursive: true });
+  await writeFile(
+    join(agentDir, 'reviewer.md'),
+    '---\nname: reviewer\ndescription: Reviews code.\nsubagents:\n  - explore\n---\n\nReview the requested change.\n',
+    'utf-8',
+  );
+}
+
 class StubRpc extends SDKRpcClientBase {
   resumeCalls: Array<{ input: ResumeSessionInput; kaos: Kaos; persistenceKaos?: Kaos }> = [];
 
@@ -87,6 +110,123 @@ class StubRpc extends SDKRpcClientBase {
       agents: {},
     };
   }
+}
+
+class ResumeEventRpc extends SDKRpcClientBase {
+  private subscriptions = 0;
+
+  constructor(private readonly rejectResume = false) {
+    super();
+  }
+
+  get listenerCount(): number {
+    return this.subscriptions;
+  }
+
+  protected async getRpc(): Promise<never> {
+    throw new Error('not used');
+  }
+
+  override onEvent(listener: (event: Event) => void): () => void {
+    const unsubscribe = super.onEvent(listener);
+    this.subscriptions += 1;
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      this.subscriptions -= 1;
+      unsubscribe();
+    };
+  }
+
+  override async resumeSession(input: ResumeSessionInput): Promise<ResumedSessionSummary> {
+    for (const event of resumeEvents(input.id)) {
+      this.receiveEvent(event);
+    }
+    if (this.rejectResume) {
+      throw new Error('resume failed');
+    }
+    return resumedSummary(input.id);
+  }
+
+  override async closeSession(): Promise<void> {}
+}
+
+function resumedSummary(id: string): ResumedSessionSummary {
+  return {
+    id,
+    workDir: '/tmp/work',
+    sessionDir: '/tmp/session',
+    createdAt: 1,
+    updatedAt: 1,
+    sessionMetadata: {
+      createdAt: '',
+      updatedAt: '',
+      title: '',
+      isCustomTitle: false,
+      agents: {},
+      custom: {},
+    },
+    agents: {},
+  };
+}
+
+function resumeEvents(sessionId: string): readonly Event[] {
+  return [
+    {
+      type: 'cron.fired',
+      sessionId,
+      agentId: 'main',
+      origin: {
+        kind: 'cron_job',
+        jobId: 'cron-example',
+        cron: '0 9 * * *',
+        recurring: true,
+        coalescedCount: 1,
+        stale: false,
+      },
+      prompt: 'Review the scheduled report.',
+    },
+    {
+      type: 'turn.started',
+      sessionId,
+      agentId: 'main',
+      turnId: 7,
+      origin: {
+        kind: 'cron_job',
+        jobId: 'cron-example',
+        cron: '0 9 * * *',
+        recurring: true,
+        coalescedCount: 1,
+        stale: false,
+      },
+    },
+    {
+      type: 'assistant.delta',
+      sessionId,
+      agentId: 'main',
+      turnId: 7,
+      delta: 'Scheduled review finished.',
+    },
+    {
+      type: 'turn.ended',
+      sessionId,
+      agentId: 'main',
+      turnId: 7,
+      reason: 'completed',
+    },
+  ] as Event[];
+}
+
+function makeStubHarness(rpc: SDKRpcClientBase): KimiHarness {
+  return new KimiHarness(rpc, {
+    homeDir: '/tmp/home',
+    configPath: '/tmp/config.toml',
+    auth: { status: async () => ({ providers: [] }) } as never,
+    telemetry: recordingTelemetry([]),
+    ensureConfigFile: async () => undefined,
+    onClose: () => undefined,
+  });
 }
 
 describe('KimiHarness.createSession transport link', () => {
@@ -553,6 +693,82 @@ effort = "medium"
     }
   });
 
+  it('does not persist a session record when the requested agent profile is missing', async () => {
+    const homeDir = await makeTempDir();
+    const workDir = await makeTempDir();
+    const harness = createKimiHarness({
+      identity: TEST_IDENTITY,
+      homeDir,
+    });
+
+    try {
+      await expect(
+        harness.createSession({
+          id: 'ses_missing_agent_profile',
+          workDir,
+          agentProfile: 'missing-agent',
+        }),
+      ).rejects.toMatchObject({
+        name: 'KimiError',
+        code: 'agent.not_found',
+      });
+      expect(await harness.listSessions({ workDir })).toEqual([]);
+      expect(existsSync(join(homeDir, 'session_index.jsonl'))).toBe(false);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('allows the session ID to be reused after agent profile selection fails', async () => {
+    const homeDir = await makeTempDir();
+    const workDir = await makeTempDir();
+    const harness = createKimiHarness({
+      identity: TEST_IDENTITY,
+      homeDir,
+    });
+
+    try {
+      await expect(
+        harness.createSession({
+          id: 'ses_reusable_after_missing_profile',
+          workDir,
+          agentProfile: 'missing-agent',
+        }),
+      ).rejects.toMatchObject({ code: 'agent.not_found' });
+
+      await expect(
+        harness.createSession({
+          id: 'ses_reusable_after_missing_profile',
+          workDir,
+        }),
+      ).resolves.toMatchObject({ id: 'ses_reusable_after_missing_profile' });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('does not persist a session record when an explicit agent file cannot be loaded', async () => {
+    const homeDir = await makeTempDir();
+    const workDir = await makeTempDir();
+    const harness = createKimiHarness({
+      identity: TEST_IDENTITY,
+      homeDir,
+    });
+
+    try {
+      await expect(
+        harness.createSession({
+          id: 'ses_missing_explicit_agent_file',
+          workDir,
+          agentFiles: [join(workDir, 'missing-agent.md')],
+        }),
+      ).rejects.toThrow(/missing-agent\.md/);
+      expect(await harness.listSessions({ workDir })).toEqual([]);
+    } finally {
+      await harness.close();
+    }
+  });
+
   it('closes active runtime handles through closeSession, session.close, and close', async () => {
     const homeDir = await makeTempDir();
     const workDir = await makeTempDir();
@@ -771,6 +987,209 @@ effort = "medium"
       kaos,
       persistenceKaos: undefined,
     });
+  });
+
+  it('filters session events before resume resolves and then stays live', async () => {
+    const sessionId = 'ses_resume_event_relay';
+    const rpc = new ResumeEventRpc();
+    const harness = makeStubHarness(rpc);
+    const events: Event[] = [];
+    const otherSessionEvents: Event[] = [];
+    const unsubscribe = harness.onSessionEvent(sessionId, (event) => events.push(event));
+    const unsubscribeOther = harness.onSessionEvent('ses_other', (event) => {
+      otherSessionEvents.push(event);
+    });
+
+    await harness.resumeSession({ id: sessionId });
+    rpc.receiveEvent({
+      type: 'assistant.delta',
+      sessionId,
+      agentId: 'main',
+      turnId: 8,
+      delta: 'Live after resume.',
+    });
+
+    expect(events.map((event) => event.type)).toEqual([
+      'cron.fired',
+      'turn.started',
+      'assistant.delta',
+      'turn.ended',
+      'assistant.delta',
+    ]);
+    expect(otherSessionEvents).toEqual([]);
+    expect(events.filter((event) => event.type === 'cron.fired')).toHaveLength(1);
+    expect(rpc.listenerCount).toBe(2);
+
+    unsubscribe();
+    unsubscribeOther();
+    expect(rpc.listenerCount).toBe(0);
+    await harness.close();
+  });
+
+  it('keeps pre-resume subscription ownership explicit when resume rejects', async () => {
+    const rpc = new ResumeEventRpc(true);
+    const harness = makeStubHarness(rpc);
+    const unsubscribe = harness.onSessionEvent(
+      'ses_resume_event_rejection',
+      () => undefined,
+    );
+
+    await expect(
+      harness.resumeSession({ id: 'ses_resume_event_rejection' }),
+    ).rejects.toThrow('resume failed');
+
+    expect(rpc.listenerCount).toBe(1);
+    unsubscribe();
+    expect(rpc.listenerCount).toBe(0);
+    await harness.close();
+  });
+
+  it('releases only the exact interaction handler registration owner', async () => {
+    const rpc = new ResumeEventRpc();
+    const sessionId = 'ses_interaction_registration_owner';
+    const approvalHandler: ApprovalHandler = () => ({ decision: 'approved' });
+    const questionHandler: QuestionHandler = () => ({ 'Continue?': 'Yes' });
+    const releaseApprovalFirst = rpc.registerApprovalHandler(
+      sessionId,
+      approvalHandler,
+    );
+    const releaseApprovalSecond = rpc.registerApprovalHandler(
+      sessionId,
+      approvalHandler,
+    );
+    const releaseQuestionFirst = rpc.registerQuestionHandler(
+      sessionId,
+      questionHandler,
+    );
+    const releaseQuestionSecond = rpc.registerQuestionHandler(
+      sessionId,
+      questionHandler,
+    );
+
+    releaseApprovalFirst();
+    releaseQuestionFirst();
+    await expect(
+      rpc.requestApproval({
+        sessionId,
+        agentId: 'main',
+        toolCallId: 'tool-registration-owner',
+        toolName: 'Bash',
+        action: 'run command',
+        display: { kind: 'command', command: 'echo ready' },
+      }),
+    ).resolves.toEqual({ decision: 'approved' });
+    await expect(
+      rpc.requestQuestion({
+        sessionId,
+        agentId: 'main',
+        toolCallId: 'question-registration-owner',
+        questions: [
+          {
+            question: 'Continue?',
+            options: [{ label: 'Yes' }],
+          },
+        ],
+      }),
+    ).resolves.toEqual({ 'Continue?': 'Yes' });
+
+    rpc.setApprovalHandler(sessionId, approvalHandler);
+    rpc.setQuestionHandler(sessionId, questionHandler);
+    releaseApprovalSecond();
+    releaseQuestionSecond();
+    await expect(
+      rpc.requestApproval({
+        sessionId,
+        agentId: 'main',
+        toolCallId: 'tool-setter-owner',
+        toolName: 'Bash',
+        action: 'run command',
+        display: { kind: 'command', command: 'echo ready' },
+      }),
+    ).resolves.toEqual({ decision: 'approved' });
+    await expect(
+      rpc.requestQuestion({
+        sessionId,
+        agentId: 'main',
+        toolCallId: 'question-setter-owner',
+        questions: [
+          {
+            question: 'Continue?',
+            options: [{ label: 'Yes' }],
+          },
+        ],
+      }),
+    ).resolves.toEqual({ 'Continue?': 'Yes' });
+  });
+
+  it('rejects an active session resume when the requested profile differs from its binding', async () => {
+    const homeDir = await makeTempDir();
+    const workDir = await makeTempDir();
+    await writeTestModelConfig(homeDir);
+    await writeReviewerAgent(workDir);
+    const harness = createKimiHarness({ identity: TEST_IDENTITY, homeDir });
+
+    try {
+      const session = await harness.createSession({
+        id: 'ses_active_profile_identity',
+        workDir,
+        agentProfile: 'reviewer',
+      });
+
+      await expect(
+        harness.resumeSession({ id: session.id, agentProfile: 'agent' }),
+      ).rejects.toThrow(
+        'agent is already bound to profile "reviewer"; cannot switch to "agent" in this session',
+      );
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('returns the active session when the requested profile matches its binding', async () => {
+    const homeDir = await makeTempDir();
+    const workDir = await makeTempDir();
+    await writeTestModelConfig(homeDir);
+    await writeReviewerAgent(workDir);
+    const harness = createKimiHarness({ identity: TEST_IDENTITY, homeDir });
+
+    try {
+      const session = await harness.createSession({
+        id: 'ses_matching_profile_identity',
+        workDir,
+        agentProfile: 'reviewer',
+      });
+
+      await expect(
+        harness.resumeSession({ id: session.id, agentProfile: 'reviewer' }),
+      ).resolves.toBe(session);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('rejects a persisted session resume when the requested profile differs from its binding', async () => {
+    const homeDir = await makeTempDir();
+    const workDir = await makeTempDir();
+    await writeTestModelConfig(homeDir);
+    await writeReviewerAgent(workDir);
+    const harness = createKimiHarness({ identity: TEST_IDENTITY, homeDir });
+
+    try {
+      const session = await harness.createSession({
+        id: 'ses_persisted_profile_identity',
+        workDir,
+        agentProfile: 'reviewer',
+      });
+      await session.close();
+
+      await expect(
+        harness.resumeSession({ id: session.id, agentProfile: 'agent' }),
+      ).rejects.toThrow(
+        'agent is already bound to profile "reviewer"; cannot switch to "agent" in this session',
+      );
+    } finally {
+      await harness.close();
+    }
   });
 });
 

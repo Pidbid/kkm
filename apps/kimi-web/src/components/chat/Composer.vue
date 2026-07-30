@@ -491,11 +491,13 @@ function handleKeydown(e: KeyboardEvent): void {
     }
   }
 
-  // Ctrl+S / Cmd+S — steer into the running turn (TUI parity). toLowerCase so
-  // CapsLock (key: 'S') doesn't defeat the match, same as the sidebar's Ctrl+K.
+  // Ctrl+S / Cmd+S — steer into the running turn (TUI parity). Always swallow
+  // the shortcut, and normalize the key so CapsLock cannot defeat the match.
+  // (The same swallow lives app-wide in App.vue's onGlobalKeydown, so the
+  // dialog is suppressed even when the composer is not focused.)
   if (e.key.toLowerCase() === 's' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+    e.preventDefault();
     if (props.running) {
-      e.preventDefault();
       handleSteer();
     }
     return;

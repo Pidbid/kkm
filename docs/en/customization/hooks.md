@@ -62,9 +62,12 @@ Each time a hook triggers, the CLI passes the following base information to the 
 {
   "hook_event_name": "PreToolUse",
   "session_id": "session_abc",
-  "cwd": "/path/to/project"
+  "cwd": "/path/to/project",
+  "permission_mode": "manual"
 }
 ```
+
+The optional `permission_mode` field reports the current effective permission mode for the agent associated with the event. Its value is `manual`, `auto`, or `yolo`, and it reflects runtime mode changes rather than only the configured default. The field is omitted when the event has no live associated agent.
 
 Specific events will also include additional fields (such as tool name and command content); see the event reference below. All field names use snake_case.
 
@@ -153,5 +156,5 @@ This example only demonstrates the blocking mechanism — it is not a production
 
 ## Next steps
 
-- [Configuration files](../configuration/config-files.md#hooks) — Full field reference for `[[hooks]]` in `config.toml`
+- [Configuration](#configuration) — Full field reference for `[[hooks]]` in `config.toml`
 - [Agents and sub-agents](./agents.md) — Use the `SubagentStop` event to trigger notifications after a sub-agent completes

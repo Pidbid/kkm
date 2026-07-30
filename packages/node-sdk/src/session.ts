@@ -99,16 +99,30 @@ export class Session {
     this.rpc.setApprovalHandler(this.id, handler);
   }
 
+  registerApprovalHandler(handler: ApprovalHandler): Unsubscribe {
+    this.ensureOpen();
+    return this.rpc.registerApprovalHandler(this.id, handler);
+  }
+
   setQuestionHandler(handler: QuestionHandler | undefined): void {
     this.ensureOpen();
     this.rpc.setQuestionHandler(this.id, handler);
   }
 
-  async prompt(input: string | PromptInput): Promise<void> {
+  registerQuestionHandler(handler: QuestionHandler): Unsubscribe {
+    this.ensureOpen();
+    return this.rpc.registerQuestionHandler(this.id, handler);
+  }
+
+  async prompt(
+    input: string | PromptInput,
+    options?: { readonly promptId?: string },
+  ): Promise<void> {
     this.ensureOpen();
     await this.rpc.prompt({
       sessionId: this.id,
       input: normalizePromptInput(input),
+      promptId: options?.promptId,
     });
   }
 
@@ -206,6 +220,18 @@ export class Session {
       ErrorCodes.SESSION_THINKING_EMPTY,
     );
     await this.rpc.setThinking({ sessionId: this.id, effort: normalized });
+  }
+
+  /**
+   * Live-apply the persisted `[secondary_model]` recipe to this session
+   * (subagent model binding). Persist the recipe via `KimiHarness.setConfig`
+   * first; this reloads the complete recipe and its synthesized derived entry
+   * before updating the session snapshot — mirroring the `/secondary_model`
+   * flow.
+   */
+  async applyPersistedSecondaryModel(): Promise<void> {
+    this.ensureOpen();
+    await this.rpc.applyPersistedSecondaryModel({ sessionId: this.id });
   }
 
   async setPermission(mode: PermissionMode): Promise<void> {
@@ -543,7 +569,11 @@ export class Session {
     return this.rpc.getPluginInfo(id);
   }
 
-  async activateSkill(name: string, args?: string | undefined): Promise<void> {
+  async activateSkill(
+    name: string,
+    args?: string | undefined,
+    options?: { readonly activationId?: string },
+  ): Promise<void> {
     this.ensureOpen();
     const skillName = normalizeRequiredString(
       name,
@@ -555,6 +585,7 @@ export class Session {
       sessionId: this.id,
       name: skillName,
       ...(skillArgs !== undefined ? { args: skillArgs } : {}),
+      activationId: options?.activationId,
     });
   }
 
