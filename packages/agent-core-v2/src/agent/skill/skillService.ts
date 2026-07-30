@@ -135,7 +135,7 @@ export class AgentSkillService extends Disposable implements IAgentSkillService 
     return {
       origin: {
         kind: 'skill_activation',
-        activationId: randomUUID(),
+        activationId: input.activationId ?? randomUUID(),
         skillName: canonicalName,
         trigger: 'user-slash',
         skillType: skill.metadata.type,
