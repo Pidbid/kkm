@@ -25,7 +25,6 @@ import {
   CatalogFetchError,
   createKimiHarness,
   DEFAULT_CATALOG_URL,
-  fetchCatalog,
   resolveCatalogImport,
   type Catalog,
   type CatalogProviderEntry,
@@ -35,6 +34,7 @@ import {
 import type { Command } from 'commander';
 
 import { createKimiCodeHostIdentity, createKimiCodeUserAgent } from '#/cli/version';
+import { fetchCatalogOrBuiltIn } from '#/utils/catalog-fetch';
 import { CLI_COMMAND_NAME } from '#/constant/app';
 
 interface WritableLike {
@@ -435,7 +435,13 @@ export async function handleCatalogAdd(
 
 async function loadCatalogOrExit(deps: ProviderDeps, url: string): Promise<Catalog> {
   try {
-    return await fetchCatalog(url, { userAgent: createKimiCodeUserAgent() });
+    const loaded = await fetchCatalogOrBuiltIn(url, { userAgent: createKimiCodeUserAgent() });
+    if (loaded.fromBuiltIn) {
+      deps.stderr.write(
+        `Warning: failed to reach ${url}; using the built-in models.dev catalog snapshot.\n`,
+      );
+    }
+    return loaded.catalog;
   } catch (error) {
     const suffix = error instanceof CatalogFetchError ? ` (HTTP ${String(error.status)})` : '';
     deps.stderr.write(`Failed to fetch catalog from ${url}${suffix}: ${errorMessage(error)}\n`);

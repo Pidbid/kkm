@@ -92,6 +92,8 @@ KKM 支持 [Agent Client Protocol](https://agentclientprotocol.com/)，ACP 兼�
 
 ## 文档
 
+- [上游移植记录](UPSTREAM_PORTS.md)
+
 - [快速上手](https://moonshotai.github.io/kimi-code/zh/guides/getting-started)
 - [交互与审批](https://moonshotai.github.io/kimi-code/zh/guides/interaction)
 - [会话](https://moonshotai.github.io/kimi-code/zh/guides/sessions)

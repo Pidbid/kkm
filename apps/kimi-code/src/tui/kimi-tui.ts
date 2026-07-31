@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { DeviceAuthorization } from '@moonshot-ai/kimi-code-oauth';
+import { log } from '@moonshot-ai/kimi-code-sdk';
 import type {
   ApprovalRequest,
   ApprovalResponse,
@@ -1760,8 +1761,11 @@ export class KimiTUI {
         this.state.appState.sessionId,
         this.hasSessionContent(),
       );
-    } catch {
-      /* silently ignore */
+    } catch (error) {
+      // The picker must keep working (it renders the empty state), but a
+      // swallowed failure surfaces as a misleading "No sessions found." —
+      // keep a log trail so the real error stays discoverable.
+      log.warn('failed to fetch sessions for picker', { error: String(error) });
     } finally {
       this.state.loadingSessions = false;
     }
@@ -2130,11 +2134,8 @@ export class KimiTUI {
     this.state.todoPanelContainer.clear();
     this.imageStore.clear();
     this.renderWelcome();
-    // Session resets (/new, /clear, session switch) want a pristine screen.
-    // Force a destructive full render: the renderer's collapse repaint
-    // intentionally preserves scrollback, which would leave the previous
-    // session's text above the welcome banner.
-    this.state.ui.requestRender(true);
+    // Let the differential renderer converge without destroying scrollback.
+    this.state.ui.requestRender();
   }
 
   private isTurnBoundaryComponent(child: Component): boolean {
@@ -2628,12 +2629,8 @@ export class KimiTUI {
       if (!isExpandable(child)) continue;
       child.setExpanded(this.state.toolOutputExpanded && i >= expandCutoff);
     }
-    // Expanding/collapsing shifts content above the viewport; the clamped
-    // differential render would paint a second copy below the stale one in
-    // scrollback. This is a deliberate user action (like /clear), so do a
-    // destructive full render: scrollback holds exactly one copy and the
-    // expanded output can be read by scrolling up.
-    this.state.ui.requestRender(true);
+    // Avoid a destructive full redraw when expanding or collapsing output.
+    this.state.ui.requestRender();
   }
 
   toggleTodoPanelExpansion(): void {
@@ -2888,18 +2885,8 @@ export class KimiTUI {
     this.state.editorContainer.addChild(this.state.editor);
     this.state.ui.setFocus(this.state.editor);
     this.refreshTerminalMouseTracking();
-    // Measure overflow against the restored tree (editor mounted), not the tall
-    // panel just removed — otherwise a short session with a tall panel looks like
-    // it overflows and we take a full clear/home that yanks the editor to the top.
-    // Treat an exact one-screen fill as overflowing too: a full redraw is safe
-    // there (no blank tail) and clears a stale viewport offset after a shrink.
-    const { columns, rows } = this.state.terminal;
-    const overflowsViewport = this.state.ui.render(columns).length >= rows;
-    // Force a full re-render after replacing a tall panel with the shorter editor:
-    // differential rendering leaves the editor shifted up when the bottom-anchored
-    // region shrinks in place. Skip under tmux (its own reflow handles the shrink)
-    // and when content fits on one screen (a full clear would pull the editor up).
-    this.state.ui.requestRender(!this.state.terminalState.insideTmux && overflowsViewport);
+    // Differential rendering avoids destroying terminal scrollback on dialog close.
+    this.state.ui.requestRender();
   }
 
   restoreInputText(text: string): void {

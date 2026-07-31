@@ -271,6 +271,7 @@ describe('skill discovery', () => {
     expect(skipped[0]?.type).toBe('invalid-frontmatter');
     expect(skipped[0]?.path).toContain('codebase-memory/SKILL.md');
   });
+
 });
 
 describe('discoverSkills shape and ordering', () => {

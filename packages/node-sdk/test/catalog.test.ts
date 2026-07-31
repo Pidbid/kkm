@@ -95,8 +95,15 @@ describe('fetchCatalog', () => {
 });
 
 describe('loadBuiltInCatalog', () => {
-  it('returns undefined for invalid or non-object payloads', () => {
-    expect(loadBuiltInCatalog('{')).toBeUndefined();
+  it('parses a valid catalog JSON string', () => {
+    const catalog = { anthropic: { id: 'anthropic', models: {} } };
+    expect(loadBuiltInCatalog(JSON.stringify(catalog))).toEqual(catalog);
+  });
+
+  it('returns undefined for missing, invalid, or non-object input', () => {
+    expect(loadBuiltInCatalog(undefined)).toBeUndefined();
+    expect(loadBuiltInCatalog('')).toBeUndefined();
+    expect(loadBuiltInCatalog('not-json')).toBeUndefined();
     expect(loadBuiltInCatalog('[1, 2]')).toBeUndefined();
   });
 });

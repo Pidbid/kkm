@@ -30,6 +30,8 @@ const props = withDefaults(
     uploading?: boolean;
     /** Composer: upload failed — chip tinted, info icon replaces the badge. */
     error?: boolean;
+    /** Composer: why the attachment failed — appended to the tooltip. */
+    errorReason?: string;
     /** Composer: show a remove button. */
     removable?: boolean;
     /** Accessible label for the remove button. */
@@ -74,6 +76,7 @@ function formatSize(size: number): string {
 const title = computed(() => {
   const parts = [displayName.value];
   if (props.size !== undefined) parts.push(formatSize(props.size));
+  if (props.errorReason !== undefined) parts.push(props.errorReason);
   return parts.join(' · ');
 });
 </script>

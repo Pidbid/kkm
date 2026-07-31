@@ -576,6 +576,7 @@ export abstract class SDKRpcClientBase {
     });
   }
 
+
   async getUsage(input: SessionIdRpcInput): Promise<SessionUsage> {
     const rpc = await this.getRpc();
     return rpc.getUsage({

@@ -86,6 +86,28 @@ describe('useAttachmentUpload', () => {
     expect(att.attachments.value).toHaveLength(0);
   });
 
+  it('rejects a zero-byte file as a failed chip without uploading (issue #2209)', () => {
+    // A clipboard failure can hand the browser a named, typed, zero-byte
+    // File. Uploading it would attach an empty image that the provider later
+    // rejects — mark it failed instead so the user re-captures.
+    const uploadImage = vi.fn<UploadImage>();
+    const att = setup(uploadImage);
+    att.handleFileInputChange(
+      inputEvent([{ name: 'image.png', type: 'image/png', size: 0 } as unknown as File]),
+    );
+
+    expect(att.attachments.value).toHaveLength(1);
+    expect(att.attachments.value[0]).toMatchObject({
+      name: 'image.png',
+      kind: 'image',
+      uploading: false,
+      error: true,
+    });
+    expect(att.attachments.value[0].errorReason).toBeTruthy();
+    expect(uploadImage).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
   it('removeAttachment on a file chip has no object URL to revoke', () => {
     const uploadImage = vi.fn<UploadImage>().mockResolvedValue(null);
     const att = setup(uploadImage);

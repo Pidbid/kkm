@@ -13,6 +13,7 @@
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { getKimiWebApi } from '../api';
+import { i18n } from '../i18n';
 
 export interface Attachment {
   /** Unique local id (used as :key) */
@@ -33,6 +34,8 @@ export interface Attachment {
   fileId?: string;
   /** True if upload failed */
   error?: boolean;
+  /** Localized reason shown in the chip tooltip when `error` is set. */
+  errorReason?: string;
 }
 
 type UploadImage = (
@@ -89,6 +92,24 @@ export function useAttachmentUpload(deps: AttachmentUploadDeps) {
     for (const file of files) {
       const kind = attachmentKind(file.type);
       const localId = nextLocalId();
+      // A zero-byte file means the source (clipboard owner, picker) handed
+      // over no data — uploading it would attach an empty image that the
+      // provider later rejects. Mark it failed instead so the user
+      // re-captures; the chip stays visible but is excluded from submit.
+      if (file.size === 0) {
+        const att: Attachment = {
+          localId,
+          name: file.name,
+          kind,
+          mediaType: file.type || 'application/octet-stream',
+          size: file.size,
+          uploading: false,
+          error: true,
+          errorReason: i18n.global.t('composer.attachmentEmpty'),
+        };
+        setForSession(sid, [...(attachmentsBySession.value[sid] ?? []), att]);
+        continue;
+      }
       // Only media gets a thumbnail object URL; files render an icon chip.
       const previewUrl = kind === 'file' ? undefined : URL.createObjectURL(file);
       const att: Attachment = {
@@ -177,6 +198,19 @@ export function useAttachmentUpload(deps: AttachmentUploadDeps) {
       const key = `${blob.size}:${blob.type}:${name}`;
       if (seenKeys.has(key)) return;
       seenKeys.add(key);
+      // Diagnostics for the transient "empty clipboard image" failure: when
+      // the source app fails to deliver the selection, the browser hands us a
+      // named, typed, zero-byte File. Log everything visible at this point so
+      // the source can be identified the next time it happens.
+      if (blob.size === 0) {
+        console.warn('[kimi-web] paste produced a zero-byte file', {
+          name,
+          type: blob.type,
+          clipboardTypes: [...cd.types],
+          items: Array.from(cd.items).map((item) => ({ kind: item.kind, type: item.type })),
+          userAgent: navigator.userAgent,
+        });
+      }
       const ext = blob.type.split('/')[1] ?? 'png';
       const safeName = name.includes('.') ? name : `paste-${Date.now()}.${ext}`;
       files.push(blob instanceof File ? blob : new File([blob], safeName, { type: blob.type }));

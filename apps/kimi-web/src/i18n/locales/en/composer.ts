@@ -17,6 +17,7 @@ export default {
   attachmentVideo: 'Video',
   attachmentFile: 'File',
   attachmentOpenUnsupported: 'Can’t open {name} — this file type isn’t supported',
+  attachmentEmpty: 'Empty file (0 bytes) — not attached. If it came from the clipboard, take the screenshot or copy the image again.',
   dropToAttach: 'Drop files to attach',
   remove: 'Remove',
   removeNamed: 'Remove {name}',
