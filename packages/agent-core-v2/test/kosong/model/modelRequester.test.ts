@@ -144,10 +144,11 @@ async function collect(stream: AsyncIterable<ModelRequestEvent>): Promise<ModelR
 const INPUT = { systemPrompt: 'sys', tools: [], messages: [] };
 
 describe('ModelRequesterImpl request execution', () => {
-  it('maps ModelRequestParams onto GenerateOptions 1:1', async () => {
+  it('maps ModelRequestParams while composing caller cancellation with the stream timeout', async () => {
     const provider = new FakeChatProvider();
     const requester = new ModelRequesterImpl(modelWith(staticAuth('sk-1')), registryReturning(provider));
-    const signal = AbortSignal.timeout(1000);
+    const controller = new AbortController();
+    const signal = controller.signal;
 
     await collect(
       requester.request(
@@ -167,7 +168,11 @@ describe('ModelRequesterImpl request execution', () => {
 
     expect(provider.calls).toHaveLength(1);
     const options = provider.calls[0]!.options;
-    expect(options?.signal).toBe(signal);
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+    expect(options?.signal).not.toBe(signal);
+    expect(options?.signal?.aborted).toBe(false);
+    controller.abort();
+    expect(options?.signal?.aborted).toBe(true);
     expect(options?.auth).toEqual({ apiKey: 'sk-1' });
     expect(options?.cacheKey).toBe('session-1');
     expect(options?.sampling).toEqual({ temperature: 0.5, topP: 0.9 });

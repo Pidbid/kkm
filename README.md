@@ -88,6 +88,8 @@ Then open a new conversation in Zed's Agent panel. See the upstream [Using in ID
 
 ## Docs
 
+- [Upstream port manifest](UPSTREAM_PORTS.md)
+
 - [Getting Started](https://moonshotai.github.io/kimi-code/en/guides/getting-started)
 - [Interaction and approvals](https://moonshotai.github.io/kimi-code/en/guides/interaction)
 - [Sessions](https://moonshotai.github.io/kimi-code/en/guides/sessions)

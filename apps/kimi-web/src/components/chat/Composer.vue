@@ -862,6 +862,7 @@ function selectModel(modelId: string): void {
         :size="att.size"
         :uploading="att.uploading"
         :error="att.error"
+        :error-reason="att.errorReason"
         removable
         :remove-label="t('composer.removeNamed', { name: att.name })"
         @activate="onAttachmentActivate(att)"

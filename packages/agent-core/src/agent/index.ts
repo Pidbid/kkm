@@ -595,6 +595,7 @@ export class Agent {
     });
   }
 
+
   async resume(options?: AgentRecordsReplayOptions): Promise<{ warning?: string }> {
     const result = await this.records.replay(options);
     this.flushPendingAnthropicThinkingEffortWarnings();

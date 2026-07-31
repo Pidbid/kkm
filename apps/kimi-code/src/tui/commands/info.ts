@@ -1,7 +1,6 @@
 import { release as osRelease, type as osType } from 'node:os';
 
 import type { ContextBreakdownData, McpServerInfo, SessionStatus, SessionUsage } from '@moonshot-ai/kimi-code-sdk';
-
 import { buildMcpStatusReportLines } from '../components/messages/mcp-status-panel';
 import { buildContextReportLines } from '../components/messages/context-panel';
 import { buildStatusReportLines } from '../components/messages/status-panel';

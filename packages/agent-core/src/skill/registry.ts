@@ -182,6 +182,7 @@ export class SessionSkillRegistry implements AgentSkillRegistry {
         text: formatModelSkill(skill).join('\n'),
       }));
   }
+
 }
 
 function pluginSkillKey(pluginId: string, skillName: string): string {

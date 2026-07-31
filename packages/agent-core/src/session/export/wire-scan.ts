@@ -14,7 +14,6 @@ export async function scanSessionWire(sessionDir: string): Promise<SessionWireSc
   let lastActivityMs: number | undefined;
   let lastUserMessageMs: number | undefined;
   let firstUserInput: string | undefined;
-
   try {
     // Stream line-by-line: export-time scans must not hold the whole log
     // (plus a per-line string array) in memory. A missing/unreadable file

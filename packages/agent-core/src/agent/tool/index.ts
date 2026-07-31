@@ -301,6 +301,10 @@ export class ToolManager {
     for (const tool of tools) {
       if (enabledTools !== undefined && !enabledTools.has(tool.name)) continue;
       const qualified = qualifyMcpToolName(serverName, tool.name);
+      // Skip tools that are explicitly disabled via the profile's deny patterns
+      if (this.mcpDenyPatterns.some((pattern) => picomatch.isMatch(qualified, pattern))) {
+        continue;
+      }
       const firstInThisCall = seenInThisCall.get(qualified);
       if (firstInThisCall !== undefined) {
         collisions.push({
@@ -906,6 +910,7 @@ export class ToolManager {
     return { systemTools, mcpTools, mcpServers };
   }
 
+
   storeData(): Readonly<Record<string, unknown>> {
     return { ...this.store };
   }
@@ -987,6 +992,7 @@ export class ToolManager {
               log: this.agent.log,
               subagentTimeoutMs: resolveSubagentTimeoutMs(this.agent.kimiConfig?.subagent?.timeoutMs),
               showModelPreferences: this.agent.experimentalFlags.enabled('secondary-model'),
+              modelChoiceEnabled: this.agent.experimentalFlags.enabled('secondary-model'),
               subagentModelDescription: buildSubagentModelDescriptions(
                 this.agent.kimiConfig,
                 this.agent.experimentalFlags,
@@ -1004,6 +1010,7 @@ export class ToolManager {
               this.agent.experimentalFlags,
               this.agent.config.modelAlias,
             ),
+            this.agent.experimentalFlags.enabled('secondary-model'),
           ),
         toolServices?.webSearcher && new b.WebSearchTool(toolServices.webSearcher),
         toolServices?.urlFetcher && new b.FetchURLTool(toolServices.urlFetcher),

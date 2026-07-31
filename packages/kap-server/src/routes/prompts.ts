@@ -34,6 +34,7 @@ import {
   ITelemetryService,
   applyPromptMetadataUpdate,
   buildImageCompressionCaption,
+  buildEmptyImageNotice,
   buildUnsupportedImageNotice,
   compressBase64ForModel,
   compressImageForModel,
@@ -524,10 +525,17 @@ async function resolvePromptMediaFiles(
       // itself (best effort — the plain notice stands in when persisting
       // fails). Inline base64 has no original name, so the file is addressed
       // by content hash with a name derived from the sniffed format.
-      const effectiveMime = resolveEffectiveImageMime(
-        part.source.media_type,
-        decodeBase64Prefix(part.source.data),
-      );
+      //
+      // Empty payloads (a clipboard/upload failure captured zero bytes) are
+      // just as poisonous and cannot be persisted into anything readable, so
+      // they degrade to a plain notice instead of an attachment.
+      const head = decodeBase64Prefix(part.source.data);
+      if (head.length === 0) {
+        content.push({ type: 'text', text: buildEmptyImageNotice() });
+        changed = true;
+        continue;
+      }
+      const effectiveMime = resolveEffectiveImageMime(part.source.media_type, head);
       if (!isModelAcceptedImageMime(effectiveMime)) {
         const bytes = Buffer.from(part.source.data, 'base64');
         const name = `image.${imageExtensionForMime(effectiveMime)}`;
@@ -624,6 +632,14 @@ async function resolvePromptMediaFiles(
     assertMediaFile(file, part.type);
     if (part.type === 'image') {
       const data = await readFileOrStream(file);
+      // A zero-byte upload (e.g. a clipboard failure that captured nothing)
+      // would inline as an empty data URL and poison every later request —
+      // degrade it to a notice instead.
+      if (data.length === 0) {
+        content.push({ type: 'text', text: buildEmptyImageNotice(file.meta.name) });
+        changed = true;
+        continue;
+      }
       let mediaType = file.meta.media_type;
       let bytes: Uint8Array = data;
       // Same format gate as the inline path above, and again the bytes are
