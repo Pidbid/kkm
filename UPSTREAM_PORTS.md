@@ -17,7 +17,7 @@
 KKM 分支：`agent/upstream-port-20260804`  
 目标基线：KKM `main` @ `f6fb808749e421bf1a6d767993a70889e65db863`  
 KKM PR：[Pidbid/kkm#5](https://github.com/Pidbid/kkm/pull/5)  
-状态：已完成移植与完整 CI 验证，等待通过 PR #5 合并到 `main`。
+状态：已通过 PR #5 合并到 `main`。
 
 本批次重新检查了上游已合并 PR 与仍开放的社区 PR。筛选标准仍是基础能力、可靠性、跨平台和协议兼容；不移植 Kimi 账号、登录、额度、托管配置、反馈、遥测身份等厂商业务。
 
@@ -84,7 +84,7 @@ KKM PR：[Pidbid/kkm#5](https://github.com/Pidbid/kkm/pull/5)
 - 验证提交：`77c187b1bfb059bf139208bd66f628e8dae91609`
 - [CI run 30973570199](https://github.com/Pidbid/kkm/actions/runs/30973570199)：`lint`、`typecheck`、`build`、5 个测试分片和 `pi-tui` 全部通过；Windows job 按工作流条件跳过。
 - [Nix Build run 30973570206](https://github.com/Pidbid/kkm/actions/runs/30973570206)：flake workspace 同步检查和 `nix build .#kimi-code` 全部通过。
-- 合并记录：通过 [Pidbid/kkm#5](https://github.com/Pidbid/kkm/pull/5) 使用 merge commit 合并；该 PR 与本文件共同保留最终合并提交和逐项来源。
+- 功能合并提交：[`86d55716854b86cdfc2ea94f642fd28033bcec20`](https://github.com/Pidbid/kkm/commit/86d55716854b86cdfc2ea94f642fd28033bcec20)（[Pidbid/kkm#5](https://github.com/Pidbid/kkm/pull/5)，merge commit）。
 
 ## Batch 2026-07-31 — 通用基础更新
 
