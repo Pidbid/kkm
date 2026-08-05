@@ -144,7 +144,7 @@ import { extractMediaAttachments, rewriteMediaPlaceholders } from './utils/image
 import { REPLAY_TURN_LIMIT } from './utils/message-replay';
 import { hasPatchChanges } from './utils/object-patch';
 import { sessionRowsForPicker } from './utils/session-picker-rows';
-import { formatBashOutputForDisplay } from './utils/shell-output';
+import { capStoredShellOutput, formatBashOutputForDisplay } from './utils/shell-output';
 import { combineStartupNotice, isOAuthLoginRequiredError } from './utils/startup';
 import { installTerminalFocusTracking } from './utils/terminal-focus';
 import { installEditorMouseTracking } from './utils/editor-mouse';
