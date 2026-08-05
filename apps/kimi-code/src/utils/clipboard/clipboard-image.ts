@@ -312,6 +312,9 @@ function readClipboardImageViaXclip(run: RunCommand): ClipboardImage | null {
  * Linux clipboard. PowerShell reaches the Windows clipboard directly;
  * we round-trip via a temp PNG because binary stdout is unreliable
  * across the WSL interop boundary.
+ *
+ * WinForms Clipboard APIs require a single-threaded apartment. Prefer the
+ * PNG clipboard format when present and fall back to GetImage().
  */
 function readClipboardImageViaPowerShell(run: RunCommand): ClipboardImage | null {
   const tmpFile = join(tmpdir(), `kimi-wsl-clip-${randomUUID()}.png`);
@@ -330,13 +333,34 @@ function readClipboardImageViaPowerShell(run: RunCommand): ClipboardImage | null
       'Add-Type -AssemblyName System.Windows.Forms',
       'Add-Type -AssemblyName System.Drawing',
       `$path = '${winPath.replaceAll("'", "''")}'`,
-      '$img = [System.Windows.Forms.Clipboard]::GetImage()',
-      "if ($img) { $img.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); Write-Output 'ok' } else { Write-Output 'empty' }",
+      '$ok = $false',
+      '$obj = [System.Windows.Forms.Clipboard]::GetDataObject()',
+      "if ($obj -and $obj.GetDataPresent('PNG')) {",
+      "  $stream = $obj.GetData('PNG')",
+      '  if ($stream -is [System.IO.MemoryStream]) {',
+      "    [System.IO.File]::WriteAllBytes($path, $stream.ToArray()); $ok = $true",
+      '  }',
+      '}',
+      'if (-not $ok) {',
+      '  $img = [System.Windows.Forms.Clipboard]::GetImage()',
+      '  if ($img) {',
+      '    $img.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)',
+      '    $ok = $true',
+      '  }',
+      '}',
+      "if ($ok) { Write-Output 'ok' } else { Write-Output 'empty' }",
     ].join('; ');
 
-    const result = run('powershell.exe', ['-NoProfile', '-Command', psScript], {
-      timeoutMs: DEFAULT_POWERSHELL_TIMEOUT_MS,
-    });
+    const result = run(
+      'powershell.exe',
+      ['-STA', '-NoProfile', '-NonInteractive', '-Command', psScript],
+      {
+        timeoutMs: DEFAULT_POWERSHELL_TIMEOUT_MS,
+        // Kept for compatibility with callers/tests; the script also embeds
+        // the path because WSL only forwards opted-in variables to Win32.
+        env: { ...process.env, KIMI_WSL_CLIPBOARD_IMAGE_PATH: winPath },
+      },
+    );
     if (!result.ok) return null;
     if (result.stdout.toString('utf-8').trim() !== 'ok') return null;
 

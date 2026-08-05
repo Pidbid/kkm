@@ -12,6 +12,69 @@
 - KKM 对补丁进行了冲突融合，不保证 KKM 提交 SHA 与上游一致；上游 PR 与固定 head SHA 是来源依据。
 - 每次同步都必须更新本文件，并在 KKM PR 与 Release Notes 中引用对应批次。
 
+## Batch 2026-08-04 — 官方与社区通用修复
+
+KKM 分支：`agent/upstream-port-20260804`  
+目标基线：KKM `main` @ `f6fb808749e421bf1a6d767993a70889e65db863`  
+KKM PR：待创建  
+状态：移植完成，等待 KKM CI 验证与合并。
+
+本批次重新检查了上游已合并 PR 与仍开放的社区 PR。筛选标准仍是基础能力、可靠性、跨平台和协议兼容；不移植 Kimi 账号、登录、额度、托管配置、反馈、遥测身份等厂商业务。
+
+### 上游已合并（官方采纳）
+
+| Upstream PR | 固定 head SHA | 功能 | KKM 处理 |
+|---|---|---|---|
+| [#744](https://github.com/MoonshotAI/kimi-code/pull/744) | `3462a77c7785` | legacy SSE MCP：配置、ACP、插件、OAuth 与文档 | 与 KKM 已有实现对照融合，补齐缺口 |
+| [#2565](https://github.com/MoonshotAI/kimi-code/pull/2565) | `5d8ff30c6c77` | `/fork` 后保持在原会话，避免中断运行中的任务 | 按 KKM 品牌与现有会话 API 适配，并保留测试 |
+| [#2567](https://github.com/MoonshotAI/kimi-code/pull/2567) | `0dd51b89310a` | 恢复会话时回放 `profile.bind`，保留工具配置 | 完整移植 v1 兼容路径与测试 |
+| [#2585](https://github.com/MoonshotAI/kimi-code/pull/2585) | `b35eb4d54d22` | 支持包含冒号的 question/tool-call ID | 融合 KKM 的 session lifecycle 路径 |
+| [#2596](https://github.com/MoonshotAI/kimi-code/pull/2596) | `5387387a4208` | MCP `structuredContent` / `_meta` 传递给模型 | 移植当前 v1/v2 输出路径；不创建缺失的新版 `mcpCore` 树 |
+| [#2600](https://github.com/MoonshotAI/kimi-code/pull/2600) | `422c0d8e970a` | 过滤 MCP 协议保留的 `_meta` 键 | 与 #2596 成组移植并覆盖序列化测试 |
+| [#2609](https://github.com/MoonshotAI/kimi-code/pull/2609) | `a46bc7610e49` | OAuth token 更新时保留 `expiresAt` | 完整移植兼容路径与测试 |
+| [#2620](https://github.com/MoonshotAI/kimi-code/pull/2620) | `8cef67f8af8c` | OAuth 回调地址变化时废弃陈旧 client registration | 移植现有 v1 OAuth 路径；新版 `mcpCore` 部分暂缓 |
+
+### KKM 提前采用的开放社区 PR
+
+| Upstream PR | 固定 head SHA | 功能 | 风险控制 |
+|---|---|---|---|
+| [#2430](https://github.com/MoonshotAI/kimi-code/pull/2430) | `523b048e37cd` | Windows 下托管插件更新规避 `EBUSY` | rename-swap 小补丁，带回滚/测试 |
+| [#2452](https://github.com/MoonshotAI/kimi-code/pull/2452) | `6c2e94a12d0a` | Web 静态资源缓存头 | 上游 CI 已通过；仅缓存策略 |
+| [#2500](https://github.com/MoonshotAI/kimi-code/pull/2500) | `cf75a345e1d6` | 工具参数中字符串形式的 number/boolean/array 定向纠正 | 仅对类型失败字段重试，避免全局强制转换 |
+| [#2501](https://github.com/MoonshotAI/kimi-code/pull/2501) | `63677cd0db72` | provider 刷新时保留 fallback/default | 原子刷新路径与测试一并移植 |
+| [#2502](https://github.com/MoonshotAI/kimi-code/pull/2502) | `089d59a09b64` | 将成功的 PreToolUse hook stdout 追加到模型上下文 | 覆盖 turn、subagent、后台任务与 projector |
+| [#2508](https://github.com/MoonshotAI/kimi-code/pull/2508) | `1ce0e7ec0f8c` | 跳过空 reasoning 流片段 | KKM 已有更严格兼容逻辑；补齐关联路径 |
+| [#2509](https://github.com/MoonshotAI/kimi-code/pull/2509) | `09e6a339ac65` | Web 重载历史时合并连续流式文本/思考片段 | 按 KKM 已有块渲染逻辑手工融合，保留边界 |
+| [#2510](https://github.com/MoonshotAI/kimi-code/pull/2510) | `0265111eca76` | WSL 图片粘贴使用 PowerShell STA 与 PNG 格式 | 保留 KKM 的安全临时路径传递，补齐测试 |
+| [#2511](https://github.com/MoonshotAI/kimi-code/pull/2511) | `eb224a2c7143` | Edit 拒绝意外的大范围空替换删除 | v1/v2 编辑器实现与测试同步 |
+| [#2513](https://github.com/MoonshotAI/kimi-code/pull/2513) | `3314f6a731a1` | Web 超长代码行稳定渲染 | CSS/渲染性能小修复 |
+| [#2537](https://github.com/MoonshotAI/kimi-code/pull/2537) | `82958df646ef` | v1 正确遵守 `[tools].disabled` | 配置层小修复与单测 |
+| [#2541](https://github.com/MoonshotAI/kimi-code/pull/2541) | `72514bc0aef8` | Bash 退出后仍保留迟到 stdout | 生命周期与 e2e 测试同步 |
+| [#2544](https://github.com/MoonshotAI/kimi-code/pull/2544) | `eade0e38a592` | 展开 `KIMI_CODE_HOME=~/...` | 跨平台路径小修复 |
+| [#2603](https://github.com/MoonshotAI/kimi-code/pull/2603) | `1dee7cfbc9ad` | transcript fold 后回收旧 UI entry | 上游 CI 已通过；加入独立回归测试 |
+| [#2621](https://github.com/MoonshotAI/kimi-code/pull/2621) | `43446ed556f8` | 裁剪 shell-only transcript turn，并限制保存输出大小 | 上游 CI 已通过；与 KKM TUI 逻辑融合 |
+
+### 建议继续关注但本批次不合并
+
+| Upstream PR | 原因 / 后续条件 |
+|---|---|
+| [#2586](https://github.com/MoonshotAI/kimi-code/pull/2586) | MCP 非阻塞启动依赖 KKM 尚未引入的 v2 workspace/session lifecycle；需整套架构到位后移植 |
+| [#2608](https://github.com/MoonshotAI/kimi-code/pull/2608) | v2 MCP OAuth opt-in 全部位于缺失的新版 `mcpCore`；不能只移植半套 |
+| [#2573](https://github.com/MoonshotAI/kimi-code/pull/2573) | 自定义 Agent identity 涉及约 79 个文件且以 v2 为主，需单独设计迁移批次 |
+| [#2612](https://github.com/MoonshotAI/kimi-code/pull/2612) | Skill watcher 的 FD 修复依赖 #2366 的新 skill service 架构 |
+| [#2202](https://github.com/MoonshotAI/kimi-code/pull/2202) | 终端鼠标选择跨约 33 个文件，仍属实验性 UI 行为 |
+| [#2604](https://github.com/MoonshotAI/kimi-code/pull/2604) | minidb 大型重构，基础收益不足以覆盖迁移风险 |
+| [#2593](https://github.com/MoonshotAI/kimi-code/pull/2593) | engine-native image refs 仍为 draft，且依赖 v2 turn/wire |
+| [#2610](https://github.com/MoonshotAI/kimi-code/pull/2610) | session effort flag 跨 24 个文件，需先确认 KKM 对模型 effort 的统一策略 |
+| [#2578](https://github.com/MoonshotAI/kimi-code/pull/2578), [#2579](https://github.com/MoonshotAI/kimi-code/pull/2579) | Web UI 小修可用但优先级低，等待与下一次 Web 专项批次合并 |
+
+### 本批次验证
+
+- 验证提交：待 CI
+- CI：待运行
+- Nix Build：待运行
+- 合并提交：待合并
+
 ## Batch 2026-07-31 — 通用基础更新
 
 KKM 分支：`agent/upstream-port-20260731`  

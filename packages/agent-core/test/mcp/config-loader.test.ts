@@ -305,6 +305,28 @@ describe('loadMcpServers', () => {
     });
   });
 
+  it('loads explicit SSE server config', async () => {
+    const home = makeTempDir();
+    const cwd = makeTempDir();
+    await writeJson(join(home, 'mcp.json'), {
+      mcpServers: {
+        legacy: {
+          transport: 'sse',
+          url: 'https://mcp.example.com/sse',
+          headers: { 'X-Tenant': 'kimi' },
+          bearerTokenEnvVar: 'LEGACY_MCP_TOKEN',
+        },
+      },
+    });
+    const servers = await loadMcpServers({ cwd, homeDir: home });
+    expect(servers['legacy']).toEqual({
+      transport: 'sse',
+      url: 'https://mcp.example.com/sse',
+      headers: { 'X-Tenant': 'kimi' },
+      bearerTokenEnvVar: 'LEGACY_MCP_TOKEN',
+    });
+  });
+
   it('honors KIMI_CODE_HOME env var when homeDir is not supplied', async () => {
     const home = makeTempDir();
     const cwd = makeTempDir();

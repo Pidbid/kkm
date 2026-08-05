@@ -147,6 +147,26 @@ export async function mcpResultToExecutableOutput(
   }
 
   const wrapped = wrapMediaOnly(converted, qualifiedToolName);
+  const structuredExtras: Record<string, unknown> = {};
+  if (result.structuredContent !== undefined) {
+    structuredExtras['structuredContent'] = result.structuredContent;
+  }
+  if (result._meta !== undefined) {
+    const meta = stripReservedMetaKeys(result._meta);
+    if (meta !== undefined) {
+      structuredExtras['_meta'] = meta;
+    }
+  }
+  if (Object.keys(structuredExtras).length > 0) {
+    const serialized = serializeStructuredExtras(structuredExtras);
+    if (serialized !== undefined) {
+      wrapped.push({
+        type: 'text',
+        text: `\n<mcp-structured-result>\n${serialized}\n</mcp-structured-result>`,
+      });
+    }
+  }
+
   const budgeted = applyTextBudget(wrapped);
   const compressed = await compressImageContentParts(budgeted.parts, {
     telemetry:
@@ -172,6 +192,36 @@ export async function mcpResultToExecutableOutput(
     note,
     truncated: truncated ? true : undefined,
   };
+}
+
+function serializeStructuredExtras(extras: Record<string, unknown>): string | undefined {
+  try {
+    return JSON.stringify(extras).replaceAll('</mcp-structured-result>', '');
+  } catch {
+    return undefined;
+  }
+}
+
+function stripReservedMetaKeys(
+  meta: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(meta)) {
+    if (!isReservedMetaKey(key)) {
+      out[key] = value;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function isReservedMetaKey(key: string): boolean {
+  const slash = key.indexOf('/');
+  if (slash <= 0) return false;
+  const labels = key.slice(0, slash).split('.');
+  return labels.some(
+    (label, i) =>
+      (label === 'modelcontextprotocol' || label === 'mcp') && i < labels.length - 1,
+  );
 }
 
 function wrapMediaOnly(parts: readonly ContentPart[], qualifiedToolName: string): ContentPart[] {
