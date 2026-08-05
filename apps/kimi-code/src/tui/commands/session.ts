@@ -5,7 +5,6 @@ import { pathToFileURL } from 'node:url';
 import type { Session } from '@moonshot-ai/kimi-code-sdk';
 
 import { detectInstallSource } from '#/cli/update/source';
-import { CLI_COMMAND_NAME } from '#/constant/app';
 import { detectShellEnvironment } from '#/utils/process/shell-env';
 import { toTerminalHyperlink } from '#/utils/terminal-hyperlink';
 import { LLM_NOT_SET_MESSAGE, NO_ACTIVE_SESSION_MESSAGE } from '../constant/kimi-tui';
@@ -56,26 +55,27 @@ export async function handleForkCommand(host: SlashCommandHost, args: string): P
   }
 
   const sourceTitle = forkSourceTitle(host, session);
-  let forked: Session;
   try {
-    forked = await host.harness.forkSession({
+    const forked = await host.harness.forkSession({
       id: session.id,
       title: `Fork: ${sourceTitle}`,
     });
-  } catch (error) {
-    const msg = formatErrorMessage(error);
-    host.showError(`Failed to fork session: ${msg}`);
-    return;
-  }
-
-  try {
-    await host.switchToSession(
-      forked,
-      `Session forked (${forked.id}). To return to the original session: ${CLI_COMMAND_NAME} -r ${session.id}`,
+    const forkId = forked.id;
+    try {
+      await forked.close();
+    } catch (error) {
+      const msg = formatErrorMessage(error);
+      host.showError(`Session forked (${forkId}), but failed to release its runtime: ${msg}`);
+      return;
+    }
+    // Stay in the source session: switching to the fork would close the source,
+    // killing its in-flight turn and background tasks.
+    host.showStatus(
+      `Session forked (${forkId}). Still in the original session; switch to the fork via /sessions.`,
     );
   } catch (error) {
     const msg = formatErrorMessage(error);
-    host.showError(`Failed to switch to forked session: ${msg}`);
+    host.showError(`Failed to fork session: ${msg}`);
   }
 }
 

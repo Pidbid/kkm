@@ -144,7 +144,7 @@ import { extractMediaAttachments, rewriteMediaPlaceholders } from './utils/image
 import { REPLAY_TURN_LIMIT } from './utils/message-replay';
 import { hasPatchChanges } from './utils/object-patch';
 import { sessionRowsForPicker } from './utils/session-picker-rows';
-import { formatBashOutputForDisplay } from './utils/shell-output';
+import { capStoredShellOutput, formatBashOutputForDisplay } from './utils/shell-output';
 import { combineStartupNotice, isOAuthLoginRequiredError } from './utils/startup';
 import { installTerminalFocusTracking } from './utils/terminal-focus';
 import { installEditorMouseTracking } from './utils/editor-mouse';
@@ -1167,10 +1167,18 @@ export class KimiTUI {
       // the UI and the model notification, so there is nothing to render here.
       return;
     }
-    stream.component.finish(stdout, stderr, isError);
+    stream.component.finish(
+      capStoredShellOutput(stdout),
+      capStoredShellOutput(stderr),
+      isError,
+    );
     // Keep the transcript entry's metadata in sync for anything that reads it
     // (export / copy). The component renders itself.
-    stream.entry.content = formatBashOutputForDisplay(stdout, stderr, isError);
+    stream.entry.content = formatBashOutputForDisplay(
+      capStoredShellOutput(stdout),
+      capStoredShellOutput(stderr),
+      isError,
+    );
     this.shellOutputStreams.delete(commandId);
     // When the last shell command finishes, leave the shell streaming phase,
     // release one queued message (if any), and refresh the activity pane.
@@ -2324,13 +2332,28 @@ export class KimiTUI {
       newChildren.push(children[i]!);
     }
 
-    for (const idx of toMergeIndices) {
-      const child = children[idx]!;
+    const mergedChildren = toMergeIndices.map((idx) => children[idx]!);
+    for (const child of mergedChildren) {
       if (hasDispose(child)) child.dispose();
     }
+    // The merged components are gone; their transcript entries have to go
+    // too, or the entry list keeps growing underneath the folded tree.
+    this.dropTranscriptEntriesOf(mergedChildren);
 
     children.splice(0, children.length, ...newChildren);
     return true;
+  }
+
+  private dropTranscriptEntriesOf(components: readonly Component[]): void {
+    const dropped = new Set<TranscriptEntry>();
+    for (const component of components) {
+      const entry = getTranscriptComponentEntry(component);
+      if (entry !== undefined) dropped.add(entry);
+    }
+    if (dropped.size === 0) return;
+    this.state.transcriptEntries = this.state.transcriptEntries.filter(
+      (entry) => !dropped.has(entry),
+    );
   }
 
   mergeAllTurnSteps(): void {
@@ -2409,6 +2432,7 @@ export class KimiTUI {
     for (const child of toDispose) {
       if (hasDispose(child)) child.dispose();
     }
+    this.dropTranscriptEntriesOf(toDispose);
     children.splice(0, children.length, ...newChildren);
   }
 
