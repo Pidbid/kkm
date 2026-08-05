@@ -1,6 +1,6 @@
 {
   "name": "@moonshot-ai/kimi-code",
-  "version": "0.30.0-kkm.1",
+  "version": "0.30.0-kkm.2",
   "description": "KKM, a portable Kimi Code fork with curated upstream fixes",
   "license": "MIT",
   "author": "Moonshot AI",
