@@ -1,5 +1,19 @@
 # @moonshot-ai/kimi-code
 
+## 0.30.0-kkm.2
+
+### KKM Changes
+
+- Add legacy SSE MCP support and preserve structured MCP results and safe metadata for model consumption.
+- Fix MCP OAuth token expiry persistence and stale redirect registrations during reauthorization.
+- Keep `/fork` in the source session, restore tool profiles on resume, and accept provider question IDs containing colons.
+- Repair common typed tool arguments, expose successful PreToolUse hook output, honor disabled tools, and guard against accidental large Edit deletions.
+- Fix managed plugin updates on Windows, WSL clipboard image paste, and home-directory expansion in `KIMI_CODE_HOME`.
+- Improve web asset caching, streamed history reconstruction, and rendering of code blocks containing very long lines.
+- Preserve provider fallback settings during refresh and bound transcript and completed shell-output memory use.
+
+The complete upstream PR and validation record is maintained in [`UPSTREAM_PORTS.md`](../../UPSTREAM_PORTS.md#batch-2026-08-04--官方与社区通用修复).
+
 ## 0.29.2
 
 ### Patch Changes

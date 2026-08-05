@@ -17,7 +17,8 @@
 KKM 分支：`agent/upstream-port-20260804`  
 目标基线：KKM `main` @ `f6fb808749e421bf1a6d767993a70889e65db863`  
 KKM PR：[Pidbid/kkm#5](https://github.com/Pidbid/kkm/pull/5)  
-状态：已通过 PR #5 合并到 `main`。
+Release：[v0.30.0-kkm.2](https://github.com/Pidbid/kkm/releases/tag/v0.30.0-kkm.2)<br>
+状态：已通过 PR #5 合并到 `main`，随 `v0.30.0-kkm.2` 发布。
 
 本批次重新检查了上游已合并 PR 与仍开放的社区 PR。筛选标准仍是基础能力、可靠性、跨平台和协议兼容；不移植 Kimi 账号、登录、额度、托管配置、反馈、遥测身份等厂商业务。
 
