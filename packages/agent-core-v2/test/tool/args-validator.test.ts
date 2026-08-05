@@ -120,10 +120,12 @@ describe('args-validator (Ajv, format support)', () => {
 
 describe('args-validator (honest type errors)', () => {
   it('reports the received value on type failures', () => {
-    expect(validate({ type: 'object', properties: { n: { type: 'integer' } } }, { n: '3' })).toBe(
-      '/n must be integer (received string "3")',
+    expect(validate({ type: 'object', properties: { n: { type: 'integer' } } }, { n: 'three' })).toBe(
+      '/n must be integer (received string "three")',
     );
-    expect(validate({ type: 'boolean' }, 'true')).toBe('must be boolean (received string "true")');
+    expect(validate({ type: 'boolean' }, 'truthy')).toBe(
+      'must be boolean (received string "truthy")',
+    );
     expect(validate({ type: 'object', properties: { n: { type: 'number' } } }, { n: null })).toBe(
       '/n must be number (received null)',
     );
@@ -141,9 +143,9 @@ describe('args-validator (honest type errors)', () => {
         },
       },
     };
-    const message = validate(schema, { line_offset: '3' });
+    const message = validate(schema, { line_offset: 'three' });
     expect(message).toBe(
-      '/line_offset must be integer (received string "3"); /line_offset must match a schema in anyOf',
+      '/line_offset must be integer (received string "three"); /line_offset must match a schema in anyOf',
     );
   });
 

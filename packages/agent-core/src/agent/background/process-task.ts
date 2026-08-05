@@ -23,6 +23,8 @@ export type ProcessBackgroundTaskOutputCallback = (
   text: string,
 ) => void;
 
+const STREAM_DRAIN_GRACE_MS = 250;
+
 export class ProcessBackgroundTask implements BackgroundTask {
   readonly kind = 'process' as const;
   readonly idPrefix = 'bash';
@@ -56,7 +58,7 @@ export class ProcessBackgroundTask implements BackgroundTask {
     let settlement: BackgroundTaskSettlement;
     try {
       const exitCode = await this.proc.wait();
-      await streamDrained;
+      await waitForStreamDrain(streamDrained);
       this.exitCode = exitCode;
       settlement = {
         status: sink.signal.aborted ? 'killed' : exitCode === 0 ? 'completed' : 'failed',
@@ -104,9 +106,24 @@ export class ProcessBackgroundTask implements BackgroundTask {
   }
 }
 
+async function waitForStreamDrain(streamDrained: Promise<void>): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      streamDrained,
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, STREAM_DRAIN_GRACE_MS);
+        timeout.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
 async function waitForStreamDrainSettled(streamDrained: Promise<void>): Promise<void> {
   try {
-    await streamDrained;
+    await waitForStreamDrain(streamDrained);
   } catch {
     /* original process/stream error wins */
   }

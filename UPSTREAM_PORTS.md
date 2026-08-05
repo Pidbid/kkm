@@ -16,7 +16,7 @@
 
 KKM 分支：`agent/upstream-port-20260804`  
 目标基线：KKM `main` @ `f6fb808749e421bf1a6d767993a70889e65db863`  
-KKM PR：待创建  
+KKM PR：[Pidbid/kkm#5](https://github.com/Pidbid/kkm/pull/5)  
 状态：移植完成，等待 KKM CI 验证与合并。
 
 本批次重新检查了上游已合并 PR 与仍开放的社区 PR。筛选标准仍是基础能力、可靠性、跨平台和协议兼容；不移植 Kimi 账号、登录、额度、托管配置、反馈、遥测身份等厂商业务。
@@ -49,7 +49,6 @@ KKM PR：待创建
 | [#2511](https://github.com/MoonshotAI/kimi-code/pull/2511) | `eb224a2c7143` | Edit 拒绝意外的大范围空替换删除 | v1/v2 编辑器实现与测试同步 |
 | [#2513](https://github.com/MoonshotAI/kimi-code/pull/2513) | `3314f6a731a1` | Web 超长代码行稳定渲染 | CSS/渲染性能小修复 |
 | [#2537](https://github.com/MoonshotAI/kimi-code/pull/2537) | `82958df646ef` | v1 正确遵守 `[tools].disabled` | 配置层小修复与单测 |
-| [#2541](https://github.com/MoonshotAI/kimi-code/pull/2541) | `72514bc0aef8` | Bash 退出后仍保留迟到 stdout | 生命周期与 e2e 测试同步 |
 | [#2544](https://github.com/MoonshotAI/kimi-code/pull/2544) | `eade0e38a592` | 展开 `KIMI_CODE_HOME=~/...` | 跨平台路径小修复 |
 | [#2603](https://github.com/MoonshotAI/kimi-code/pull/2603) | `1dee7cfbc9ad` | transcript fold 后回收旧 UI entry | 上游 CI 已通过；加入独立回归测试 |
 | [#2621](https://github.com/MoonshotAI/kimi-code/pull/2621) | `43446ed556f8` | 裁剪 shell-only transcript turn，并限制保存输出大小 | 上游 CI 已通过；与 KKM TUI 逻辑融合 |
@@ -66,6 +65,7 @@ KKM PR：待创建
 | [#2604](https://github.com/MoonshotAI/kimi-code/pull/2604) | minidb 大型重构，基础收益不足以覆盖迁移风险 |
 | [#2593](https://github.com/MoonshotAI/kimi-code/pull/2593) | engine-native image refs 仍为 draft，且依赖 v2 turn/wire |
 | [#2610](https://github.com/MoonshotAI/kimi-code/pull/2610) | session effort flag 跨 24 个文件，需先确认 KKM 对模型 effort 的统一策略 |
+| [#2541](https://github.com/MoonshotAI/kimi-code/pull/2541) | “保留迟到 Bash stdout”依赖 KKM 尚缺的新版 kaos wait/read 生命周期；独立移植会使 wait-before-read 与流错误测试挂起 |
 | [#2578](https://github.com/MoonshotAI/kimi-code/pull/2578), [#2579](https://github.com/MoonshotAI/kimi-code/pull/2579) | Web UI 小修可用但优先级低，等待与下一次 Web 专项批次合并 |
 
 ### 本批次验证

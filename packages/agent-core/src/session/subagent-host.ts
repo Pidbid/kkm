@@ -478,7 +478,7 @@ export class SessionSubagentHost {
     );
 
     // Apply global [tools].disabled to subagents too. #2534.
-    const toolsDisabled = this.session.readToolsDisabled();
+    const toolsDisabled = this.session.readToolsDisabled?.() ?? [];
     const effectiveProfile =
       toolsDisabled.length > 0
         ? {
