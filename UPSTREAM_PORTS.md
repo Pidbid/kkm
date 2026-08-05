@@ -17,9 +17,20 @@
 KKM 分支：`agent/upstream-port-20260804`  
 目标基线：KKM `main` @ `f6fb808749e421bf1a6d767993a70889e65db863`  
 KKM PR：[Pidbid/kkm#5](https://github.com/Pidbid/kkm/pull/5)  
-状态：移植完成，等待 KKM CI 验证与合并。
+状态：已完成移植与完整 CI 验证，等待通过 PR #5 合并到 `main`。
 
 本批次重新检查了上游已合并 PR 与仍开放的社区 PR。筛选标准仍是基础能力、可靠性、跨平台和协议兼容；不移植 Kimi 账号、登录、额度、托管配置、反馈、遥测身份等厂商业务。
+
+### KKM 移植提交
+
+| KKM commit | 内容 |
+|---|---|
+| `d2364c9c926a` | 首轮导入本批次筛选出的官方与社区通用修复 |
+| `dc029b8e0103` | 按 KKM 现有 SSE/MCP v2 布局消除重复实现并适配结构化结果 |
+| `3c2ce5ad9faf` | 复用现有 SSE 测试并补齐 shell 输出工具引用 |
+| `d274a0025a69` | 完成 session、参数纠正、Edit 快照兼容，并因架构前置缺失撤回 #2541 |
+| `c069f5095387`…`77c187b1bfb0` | 根据完整 CI 更新工具快照；最终代码树在 `77c187b1bfb0` 验证通过 |
+
 
 ### 上游已合并（官方采纳）
 
@@ -70,10 +81,10 @@ KKM PR：[Pidbid/kkm#5](https://github.com/Pidbid/kkm/pull/5)
 
 ### 本批次验证
 
-- 验证提交：待 CI
-- CI：待运行
-- Nix Build：待运行
-- 合并提交：待合并
+- 验证提交：`77c187b1bfb059bf139208bd66f628e8dae91609`
+- [CI run 30973570199](https://github.com/Pidbid/kkm/actions/runs/30973570199)：`lint`、`typecheck`、`build`、5 个测试分片和 `pi-tui` 全部通过；Windows job 按工作流条件跳过。
+- [Nix Build run 30973570206](https://github.com/Pidbid/kkm/actions/runs/30973570206)：flake workspace 同步检查和 `nix build .#kimi-code` 全部通过。
+- 合并记录：通过 [Pidbid/kkm#5](https://github.com/Pidbid/kkm/pull/5) 使用 merge commit 合并；该 PR 与本文件共同保留最终合并提交和逐项来源。
 
 ## Batch 2026-07-31 — 通用基础更新
 
