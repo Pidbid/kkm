@@ -164,15 +164,16 @@ export function createShellPathBridge(
   return { toShellPath, fromShellPath };
 }
 
-const bridgeCache = new WeakMap<ShellPathBridgeEnv, ShellPathBridge>();
+const bridgeCache = new Map<string, ShellPathBridge>();
 
 /**
  * Production convenience — Node's ambient `execFileSync` / `existsSync`,
- * memoised per env object (osEnv snapshots are process-lifetime memoised
- * already, so the same object identity recurs at every call site).
+ * memoised per shell identity so call sites that wrap the same probed
+ * environment in a fresh object still share one bridge.
  */
 export function getShellPathBridge(env: ShellPathBridgeEnv): ShellPathBridge {
-  const cached = bridgeCache.get(env);
+  const key = `${env.osKind} ${env.shellName} ${env.shellPath}`;
+  const cached = bridgeCache.get(key);
   if (cached !== undefined) return cached;
   const bridge = createShellPathBridge(env, {
     execFileSync: (file, args) =>
@@ -183,6 +184,6 @@ export function getShellPathBridge(env: ShellPathBridgeEnv): ShellPathBridge {
       }),
     isFile: (path) => existsSync(path),
   });
-  bridgeCache.set(env, bridge);
+  bridgeCache.set(key, bridge);
   return bridge;
 }
