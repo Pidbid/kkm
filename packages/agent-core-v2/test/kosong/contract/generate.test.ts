@@ -255,6 +255,22 @@ describe('generate() stream normalization', () => {
     );
   });
 
+  it('marks a provider-filtered thinking-only response as non-retryable', async () => {
+    class FilteredStream extends FakeStreamedMessage {
+      override readonly finishReason: FinishReason | null = 'filtered';
+      override readonly rawFinishReason: string | null = 'content_filter';
+    }
+    const stream = new FilteredStream([{ type: 'think', think: 'filtered mid-thought' }]);
+    const { provider } = createFakeProvider(stream);
+
+    const caught = await generate(provider, SYSTEM_PROMPT, NO_TOOLS, HISTORY).catch(
+      (error: unknown) => error,
+    );
+
+    expect(caught).toBeInstanceOf(APIEmptyResponseError);
+    expect(isRetryableGenerateError(caught)).toBe(false);
+  });
+
   it('forwards the trace id to onTraceId and the result', async () => {
     const stream = new FakeStreamedMessage([{ type: 'text', text: 'ok' }], {
       traceId: 'trace-123',

@@ -266,7 +266,7 @@ export function isRetryableGenerateError(error: unknown): boolean {
     return true;
   }
   if (error instanceof APIEmptyResponseError) {
-    return true;
+    return error.finishReason !== 'filtered';
   }
   if (error instanceof APIProviderOverloadedError) {
     return true;
