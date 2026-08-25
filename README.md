@@ -64,6 +64,7 @@ Take a look at this project and explain its main directories.
 - **Subagents for focused, parallel work.** Dispatch built-in `coder`, `explore`, and `plan` subagents in isolated contexts while keeping the main conversation clean.
 - **Lifecycle hooks.** Run local commands at key points to gate risky tool calls, audit decisions, trigger desktop notifications, or connect to your own automation.
 - **Editor & IDE integration (ACP).** Drive a KKM session straight from Zed, JetBrains, or any [Agent Client Protocol](https://agentclientprotocol.com/) client with `kkm acp`.
+- **Curated cross-provider reliability.** KKM regularly ports foundational upstream fixes for OpenAI-compatible, Anthropic, Gemini, MCP, shell, Windows, and terminal behavior while excluding provider-specific business features; every adopted PR is recorded in the [upstream port manifest](UPSTREAM_PORTS.md).
 
 ## Use it in your editor (ACP)
 
