@@ -16,7 +16,7 @@
 
 - KKM 分支：`agent/upstream-port-20260825`
 - 目标基线：KKM `main` @ `11fe72b0608ea49090f08f5cd2a2863ef817be68`
-- KKM PR：合并前补充
+- KKM PR：[Pidbid/kkm#8](https://github.com/Pidbid/kkm/pull/8)
 - 目标 Release：`v0.30.0-kkm.3`
 
 状态：已完成本地移植与静态检查，等待 GitHub Actions 验证。
