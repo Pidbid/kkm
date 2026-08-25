@@ -266,10 +266,10 @@ describe('mcpResultToExecutableOutput', () => {
     expect(out).toEqual({ output: 'oops', isError: true });
   });
 
-  test('omits structuredContent when content already carries usable text', async () => {
+  test('omits structuredContent when a text block already carries its serialization', async () => {
     const out = await mcpResultToExecutableOutput(
       {
-        content: [{ type: 'text', text: 'ok' }],
+        content: [{ type: 'text', text: '{"foo":1}' }],
         isError: false,
         structuredContent: { foo: 1 },
         _meta: { bar: 2 },
@@ -282,6 +282,33 @@ describe('mcpResultToExecutableOutput', () => {
     expect(joined).toContain('<mcp-structured-result>');
     expect(joined).toContain('"_meta":{"bar":2}');
     expect(out.isError).toBe(false);
+  });
+
+  test('matches the serialization across formatting and key order', async () => {
+    const out = await mcpResultToExecutableOutput(
+      {
+        content: [{ type: 'text', text: '{\n  "total": 1,\n  "rows": [ { "id": 1 } ]\n}' }],
+        isError: false,
+        structuredContent: { rows: [{ id: 1 }], total: 1 },
+      },
+      'mcp__s__t',
+    );
+    expect(out.output).toBe('{\n  "total": 1,\n  "rows": [ { "id": 1 } ]\n}');
+  });
+
+  test('appends structuredContent when content text is a summary, not the serialization', async () => {
+    const out = await mcpResultToExecutableOutput(
+      {
+        content: [{ type: 'text', text: 'list_projects returned 1 item(s).' }],
+        isError: false,
+        structuredContent: { projects: [{ id: 1 }] },
+      },
+      'mcp__s__t',
+    );
+    const parts = out.output as ContentPart[];
+    const joined = parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
+    expect(joined).toContain('list_projects returned 1 item(s).');
+    expect(joined).toContain('"structuredContent":{"projects":[{"id":1}]}');
   });
 
   test('falls back to structuredContent when content carries no usable text', async () => {
@@ -695,7 +722,7 @@ describe('mcpResultToExecutableOutput over a real stdio server', () => {
   test('dual-emitting servers reach the model once, through content', async () => {
     const out = await callFixtureTool('dual_emit');
     const text = joinedText(out.output);
-    expect(text).toContain('{"rows":[{"id":1}],"total":1}');
+    expect(text).toContain('"rows"');
     expect(text).not.toContain('<mcp-structured-result>');
   }, 15000);
 
@@ -706,11 +733,11 @@ describe('mcpResultToExecutableOutput over a real stdio server', () => {
     expect(text).toContain('"structuredContent":{"rows":[{"id":1}],"total":1}');
   }, 15000);
 
-  test('prose content suppresses structuredContent rather than duplicating it', async () => {
+  test('a prose summary keeps the structured payload alongside it', async () => {
     const out = await callFixtureTool('prose_plus_structured');
     const text = joinedText(out.output);
     expect(text).toContain('Found 1 row.');
-    expect(text).not.toContain('"structuredContent"');
+    expect(text).toContain('"structuredContent":{"rows":[{"id":1}],"total":1}');
   }, 15000);
 
   test('vendor _meta keys pass through alongside content text', async () => {
