@@ -22,6 +22,79 @@ class StrictStrikethroughTokenizer extends Tokenizer {
 	}
 }
 
+const FULLWIDTH_LEFT_PAREN = 0xff08;
+const FULLWIDTH_RIGHT_PAREN = 0xff09;
+const CJK_URL_TERMINATOR_REGEX =
+	/[\u3000-\u303f\uff01-\uff07\uff0a-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65\u2013\u2014\u2018\u2019\u201c\u201d\u2026]/;
+
+function findCjkUrlBoundary(match: string): number {
+	let parenDepth = 0;
+	let unmatchedOpen = -1;
+	for (let i = 0; i < match.length; i++) {
+		const code = match.charCodeAt(i);
+		if (code === FULLWIDTH_LEFT_PAREN) {
+			parenDepth++;
+			if (unmatchedOpen === -1) {
+				unmatchedOpen = i;
+			}
+		} else if (code === FULLWIDTH_RIGHT_PAREN) {
+			if (parenDepth === 0) {
+				return i;
+			}
+			parenDepth--;
+			if (parenDepth === 0) {
+				unmatchedOpen = -1;
+			}
+		} else if (parenDepth === 0 && CJK_URL_TERMINATOR_REGEX.test(match[i]!)) {
+			return i;
+		}
+	}
+	return parenDepth > 0 ? unmatchedOpen : -1;
+}
+
+class CjkBoundaryUrlTokenizer extends StrictStrikethroughTokenizer {
+	override url(src: string): Tokens.Link | undefined {
+		const cap = this.rules.inline.url.exec(src);
+		if (!cap) {
+			return undefined;
+		}
+		if (cap[2] === "@") {
+			const text = cap[0];
+			return {
+				type: "link",
+				raw: text,
+				text,
+				href: `mailto:${text}`,
+				tokens: [{ type: "text", raw: text, text }],
+			};
+		}
+
+		const boundary = findCjkUrlBoundary(cap[0]);
+		if (boundary !== -1) {
+			cap[0] = cap[0].slice(0, boundary);
+		}
+		if (!cap[0]) {
+			return undefined;
+		}
+
+		let previous: string;
+		do {
+			previous = cap[0];
+			cap[0] = this.rules.inline._backpedal.exec(cap[0])?.[0] ?? "";
+		} while (previous !== cap[0]);
+
+		const text = cap[0];
+		const href = cap[1] === "www." ? `http://${text}` : text;
+		return {
+			type: "link",
+			raw: text,
+			text,
+			href,
+			tokens: [{ type: "text", raw: text, text }],
+		};
+	}
+}
+
 function trimPartialClosingFences(tokens: readonly Token[]): void {
 	const token = tokens[tokens.length - 1];
 	if (token?.type === "list") {
@@ -49,7 +122,7 @@ function trimPartialClosingFences(tokens: readonly Token[]): void {
 
 const markdownParser = new Marked();
 markdownParser.setOptions({
-	tokenizer: new StrictStrikethroughTokenizer(),
+	tokenizer: new CjkBoundaryUrlTokenizer(),
 });
 
 /**
