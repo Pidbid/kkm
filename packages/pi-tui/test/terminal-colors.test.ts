@@ -6,7 +6,6 @@ import {
 	parseTerminalColorSchemeReport,
 	type Terminal,
 	TUI,
-	TuiMainScreen,
 } from "../src/index.ts";
 
 class TestTerminal implements Terminal {
@@ -124,7 +123,7 @@ describe("parseTerminalColorSchemeReport", () => {
 describe("TUI.queryTerminalBackgroundColor", () => {
 	it("filters non-OSC terminal status responses before application dispatch", () => {
 		const terminal = new TestTerminal();
-		const tui = new TuiMainScreen(terminal);
+		const tui = new TUI(terminal);
 		const component = new InputRecorder();
 		const listenerInputs: string[] = [];
 		tui.addChild(component);
@@ -149,7 +148,7 @@ describe("TUI.queryTerminalBackgroundColor", () => {
 
 	it("lets protocol listeners consume OSC status before focused input", () => {
 		const terminal = new TestTerminal();
-		const tui = new TuiMainScreen(terminal);
+		const tui = new TUI(terminal);
 		const component = new InputRecorder();
 		const oscStatusResponse = "\x1b]11;rgb:1515/1919/1e1e\x1b\\";
 		let observedStatus: string | undefined;
@@ -173,7 +172,7 @@ describe("TUI.queryTerminalBackgroundColor", () => {
 
 	it("filters unhandled OSC status before focused input", () => {
 		const terminal = new TestTerminal();
-		const tui = new TuiMainScreen(terminal);
+		const tui = new TUI(terminal);
 		const component = new InputRecorder();
 		tui.addChild(component);
 		tui.setFocus(component);
@@ -189,7 +188,7 @@ describe("TUI.queryTerminalBackgroundColor", () => {
 
 	it("preserves keyboard and mouse input after filtering terminal status responses", () => {
 		const terminal = new TestTerminal();
-		const tui = new TuiMainScreen(terminal);
+		const tui = new TUI(terminal);
 		const component = new InputRecorder();
 		const listenerInputs: string[] = [];
 		tui.addChild(component);
