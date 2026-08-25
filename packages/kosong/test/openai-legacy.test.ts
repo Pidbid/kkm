@@ -1432,7 +1432,7 @@ describe('OpenAILegacyChatProvider', () => {
   });
 
   describe('default reasoning protocol (no explicit reasoningKey)', () => {
-    it('omits an assistant message with only non-empty reasoning from request history', async () => {
+    it('serializes an assistant message with only non-empty reasoning', async () => {
       const provider = createProvider({ model: 'deepseek-reasoner' });
       const history: Message[] = [
         { role: 'user', content: [{ type: 'text', text: 'Write a plan' }], toolCalls: [] },
@@ -1453,6 +1453,11 @@ describe('OpenAILegacyChatProvider', () => {
 
       expect(body['messages']).toEqual([
         { role: 'user', content: 'Write a plan' },
+        {
+          role: 'assistant',
+          content: null,
+          reasoning_content: 'The plan is written. I should request approval.',
+        },
         { role: 'user', content: 'Continue' },
       ]);
       expect(body['reasoning_effort']).toBeUndefined();
@@ -1503,6 +1508,7 @@ describe('OpenAILegacyChatProvider', () => {
 
       expect(messages[0]).toEqual({
         role: 'assistant',
+        content: null,
         reasoning_content: '',
         tool_calls: [
           {
