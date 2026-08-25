@@ -6,6 +6,7 @@ import {
 	parseTerminalColorSchemeReport,
 	type Terminal,
 	TUI,
+	TuiMainScreen,
 } from "../src/index.ts";
 
 class TestTerminal implements Terminal {
