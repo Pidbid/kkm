@@ -26,7 +26,11 @@ import {
   isOfficialPluginSource,
 } from '../utils/plugin-source-label';
 import { QUOTA_CONSUMING_PLUGIN_IDS } from '#/constant/app';
-import { loadPluginMarketplace } from '#/utils/plugin-marketplace';
+import {
+  loadPluginMarketplace,
+  withMarketplaceLatestVersions,
+  type PluginMarketplace,
+} from '#/utils/plugin-marketplace';
 import { openUrl } from '#/utils/open-url';
 import type { SlashCommandHost } from './dispatch';
 
@@ -211,15 +215,23 @@ async function loadMarketplaceCatalog(
   panel: PluginsPanelComponent,
   source?: string,
 ): Promise<void> {
+  let marketplace: PluginMarketplace;
   try {
-    const marketplace = await loadPluginMarketplace({
+    marketplace = await loadPluginMarketplace({
       workDir: host.state.appState.workDir,
       source,
+      skipLatestVersions: true,
     });
     panel.setMarketplace(marketplace.plugins, marketplace.source);
+    host.state.ui.requestRender();
   } catch (error) {
     panel.setMarketplaceError(formatErrorMessage(error));
+    host.state.ui.requestRender();
+    return;
   }
+
+  const enriched = await withMarketplaceLatestVersions(marketplace);
+  panel.setMarketplace(enriched.plugins, enriched.source);
   host.state.ui.requestRender();
 }
 
