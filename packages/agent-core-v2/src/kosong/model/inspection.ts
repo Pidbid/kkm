@@ -29,6 +29,7 @@ import { getProviderDefinition } from '../provider/providerDefinition';
 
 import type { ModelRecord } from './model';
 import type { ResolvedModelAuthMaterial } from './model.types';
+import { isFirstPartyBaseUrl } from './hostRequestHeaders';
 
 // ---------------------------------------------------------------------------
 // Inspection payload
@@ -521,7 +522,8 @@ function attributeHeaders(
   const rawHost = trace.captured<Readonly<Record<string, string>>>(TRACE.hostHeaders) ?? {};
   const forwardsAll =
     providerConfig?.type !== undefined &&
-    getProviderDefinition(providerConfig.type)?.hostHeaders === 'full';
+    getProviderDefinition(providerConfig.type)?.hostHeaders === 'full' &&
+    isFirstPartyBaseUrl(providerConfig.baseUrl);
   const hostLayer: Readonly<Record<string, string>> = forwardsAll
     ? rawHost
     : rawHost['User-Agent'] === undefined

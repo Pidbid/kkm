@@ -67,6 +67,7 @@ kkm
 - **子 Agent 聚焦并行工作** 内置 `coder`、`explore`、`plan` 子 Agent 在隔离上下文中处理子任务，主对话保持清爽。
 - **生命周期 hooks** 在关键节点执行本地命令：拦截高风险工具调用、审计决策、发送桌面通知，或对接你自己的自动化脚本。
 - **编辑器 / IDE 集成（ACP）** 用 `kkm acp` 让 Zed、JetBrains 等任意 [Agent Client Protocol](https://agentclientprotocol.com/) 客户端直接驱动会话。
+- **跨厂商基础可靠性更新** 持续筛选并移植 OpenAI 兼容接口、Anthropic、Gemini、MCP、Shell、Windows 和终端层面的通用上游修复，排除厂商业务功能；每个采用的 PR 都记录在[上游移植清单](UPSTREAM_PORTS.md)中。
 
 
 ## 在编辑器里使用（ACP）

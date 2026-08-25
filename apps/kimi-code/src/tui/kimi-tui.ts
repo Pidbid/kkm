@@ -131,6 +131,7 @@ import {
   type LoginProgressSpinnerHandle,
   type QueuedMessage,
   type SteerInputItem,
+  type StepRetryState,
   type TranscriptEntry,
   type TUIStartupOptions,
   type TUIStartupState,
@@ -144,6 +145,7 @@ import { extractMediaAttachments, rewriteMediaPlaceholders } from './utils/image
 import { REPLAY_TURN_LIMIT } from './utils/message-replay';
 import { hasPatchChanges } from './utils/object-patch';
 import { sessionRowsForPicker } from './utils/session-picker-rows';
+import { formatStepRetryDetail, formatStepRetryLabel } from './utils/step-retry';
 import { capStoredShellOutput, formatBashOutputForDisplay } from './utils/shell-output';
 import { combineStartupNotice, isOAuthLoginRequiredError } from './utils/startup';
 import { installTerminalFocusTracking } from './utils/terminal-focus';
@@ -209,6 +211,10 @@ function loadingTipKind(mode: EffectiveActivityPaneMode): LoadingTipKind | undef
   return undefined;
 }
 
+function waitingSpinnerLabel(retry: StepRetryState | null): string {
+  return retry === null ? '' : formatStepRetryLabel(retry);
+}
+
 function sameStringArrays(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
@@ -240,6 +246,7 @@ function createInitialAppState(input: KimiTUIStartupInput): AppState {
     isReplaying: false,
     streamingPhase: 'idle',
     streamingStartTime: 0,
+    stepRetry: null,
     theme: input.tuiConfig.theme,
     version: input.version,
     editorCommand: input.tuiConfig.editorCommand,
@@ -324,7 +331,10 @@ export class KimiTUI {
   private pluginCommands: readonly KimiSlashCommand[] = [];
   readonly pluginCommandMap = new Map<string, string>();
   private readonly imageStore = new ImageAttachmentStore();
-  private fdPath: string | null = detectFdPath();
+  // Detected lazily in startBackgroundFdAutocomplete() — detection spawns
+  // `fd --version`, which must not happen during early startup: on Windows a
+  // bare command name resolves into the current (potentially untrusted) cwd first.
+  private fdPath: string | null = null;
   private fdDownloadStarted = false;
   sessionEventUnsubscribe: (() => void) | undefined;
   cancelInFlight: (() => void) | undefined;
@@ -691,8 +701,14 @@ export class KimiTUI {
   }
 
   private startBackgroundFdAutocomplete(): void {
-    if (this.fdPath !== null || this.fdDownloadStarted) return;
+    if (this.fdDownloadStarted) return;
     this.fdDownloadStarted = true;
+
+    this.fdPath = detectFdPath();
+    if (this.fdPath !== null) {
+      this.setupAutocomplete();
+      return;
+    }
 
     void ensureFdPath()
       .then((fdPath) => {
@@ -902,6 +918,7 @@ export class KimiTUI {
       await this.harness.close();
     } finally {
       this.sessionEventHandler.stopAllMcpServerStatusSpinners();
+      this.sessionEventHandler.clearStepRetryAttemptTimer();
       this.uninstallRainbowDance();
       try {
         await this.state.terminal.drainInput();
@@ -2163,6 +2180,17 @@ export class KimiTUI {
     return entry.turnId === undefined || entry.turnId.startsWith('replay:');
   }
 
+  /**
+   * Fold-segment boundary: everything {@link isTurnBoundaryComponent} counts,
+   * plus the cron card. A cron-fired turn mounts no user message, so without
+   * the card as a boundary its output would share the previous user turn's
+   * fold segment — and the completed-turn assistant cap would fold that turn's
+   * final answer into the step summary.
+   */
+  private isFoldSegmentBoundaryComponent(child: Component): boolean {
+    return this.isTurnBoundaryComponent(child) || child instanceof CronMessageComponent;
+  }
+
   private trimTranscriptWindow(): boolean {
     if (!TRANSCRIPT_WINDOW_ENABLED || TRANSCRIPT_MAX_TURNS <= 0) return false;
     // Session replay already caps history to its own turn limit; trimming during
@@ -2263,10 +2291,10 @@ export class KimiTUI {
     if (keepSteps <= 0 && keepAssistants <= 0) return false;
     const children = this.state.transcriptContainer.children;
 
-    // Find the start of the current turn (last turn-starting user message).
+    // Find the start of the current fold segment.
     let turnStart = -1;
     for (let i = children.length - 1; i >= 0; i--) {
-      if (this.isTurnBoundaryComponent(children[i]!)) {
+      if (this.isFoldSegmentBoundaryComponent(children[i]!)) {
         turnStart = i;
         break;
       }
@@ -2363,7 +2391,7 @@ export class KimiTUI {
 
     const boundaries: number[] = [];
     for (let i = 0; i < children.length; i++) {
-      if (this.isTurnBoundaryComponent(children[i]!)) boundaries.push(i);
+      if (this.isFoldSegmentBoundaryComponent(children[i]!)) boundaries.push(i);
     }
     if (boundaries.length === 0) return;
 
@@ -2513,7 +2541,13 @@ export class KimiTUI {
     }
     this.syncTerminalProgress(this.shouldShowTerminalProgress(effectiveMode));
     const placeSpinnerInAgentSwarm = this.shouldPlaceActivitySpinnerInAgentSwarm(effectiveMode);
-    const activityModeKey = `${effectiveMode}:${placeSpinnerInAgentSwarm ? 'swarm' : 'pane'}`;
+    // Carry the retry state in the mode key so an incoming/cleared
+    // `turn.step.retrying` rebuilds the waiting pane with fresh label and
+    // detail instead of hitting the cached-pane early return below.
+    const retry = effectiveMode === 'waiting' ? this.state.appState.stepRetry : null;
+    const retryKey =
+      retry === null ? '' : `${formatStepRetryLabel(retry)}|${formatStepRetryDetail(retry)}`;
+    const activityModeKey = `${effectiveMode}:${placeSpinnerInAgentSwarm ? 'swarm' : 'pane'}:${retryKey}`;
 
     if (
       activityModeKey === this.lastActivityMode &&
@@ -2535,14 +2569,16 @@ export class KimiTUI {
         this.state.ui.requestRender();
         return;
       case 'waiting': {
-        const spinner = this.ensureActivitySpinner('moon');
+        const stepRetry = this.state.appState.stepRetry;
+        const spinner = this.ensureActivitySpinner('moon', waitingSpinnerLabel(stepRetry));
         this.syncAgentSwarmActivitySpinner(placeSpinnerInAgentSwarm ? spinner : undefined);
         if (placeSpinnerInAgentSwarm) break;
         this.state.activityContainer.addChild(
           new ActivityPaneComponent({
             mode: 'waiting',
             spinner,
-            tip: this.currentLoadingTip?.tip,
+            tip: stepRetry === null ? this.currentLoadingTip?.tip : undefined,
+            detail: stepRetry === null ? undefined : formatStepRetryDetail(stepRetry),
           }),
         );
         break;

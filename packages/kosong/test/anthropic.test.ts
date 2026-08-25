@@ -98,6 +98,16 @@ describe('Anthropic model profile matching', () => {
       expect(matchUnknownClaudeProfile(model)).toBeUndefined();
     },
   );
+
+  // A malformed config entry (e.g. an unquoted dotted TOML key like
+  // `[models.kimi-k2.7-code]`) parses into a nested object that lacks the
+  // top-level `model` field. The v2 config schema marks `model` optional, so
+  // the entry reaches profile matching with `undefined` — the matcher must
+  // degrade to "no profile" instead of crashing the whole getModels call.
+  it('tolerates an undefined model name from a malformed config entry', () => {
+    expect(matchKnownAnthropicModelProfile(undefined as unknown as string)).toBeUndefined();
+    expect(matchUnknownClaudeProfile(undefined as unknown as string)).toBeUndefined();
+  });
 });
 
 type AnthropicGenerationState = {
@@ -2896,6 +2906,40 @@ describe('AnthropicChatProvider', () => {
         inputCacheRead: 3,
         inputCacheCreation: 2,
       });
+    });
+
+    it('coerces a missing text field to an empty string for relays that omit it', async () => {
+      const provider = createStreamProvider();
+      const stream = mockStream([
+        {
+          type: 'message_start',
+          message: {
+            id: 'msg_stream_002',
+            usage: { input_tokens: 10 },
+          },
+        },
+        { type: 'content_block_start', index: 0, content_block: { type: 'text' } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'text_delta' } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } },
+        { type: 'message_delta', delta: {}, usage: { output_tokens: 5 } },
+        { type: 'message_stop' },
+      ]);
+
+      (provider as any)._client.messages.create = vi.fn().mockResolvedValue(stream) as never;
+
+      const result = await provider.generate(
+        '',
+        [],
+        [{ role: 'user', content: [{ type: 'text', text: 'Hi' }], toolCalls: [] }],
+      );
+
+      const parts = await collectParts(result);
+
+      expect(parts).toEqual([
+        { type: 'text', text: '' },
+        { type: 'text', text: '' },
+        { type: 'text', text: 'ok' },
+      ]);
     });
 
     it('yields thinking delta and signature from stream events', async () => {

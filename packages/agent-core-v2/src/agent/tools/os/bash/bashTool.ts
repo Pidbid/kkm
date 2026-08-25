@@ -4,7 +4,7 @@
  *
  * Invokes the execution-environment shell (POSIX bash; Git Bash on Windows)
  * through the injected `ISessionProcessRunner`. The command runs as
- * `cd <cwd> && <command>` inside the environment's working directory. The
+ * `cd <cwd> || exit 1` followed by the command inside the environment's working directory. The
  * model-facing contract (schemas, timeout constants, `IBashTool` identifier)
  * lives in `./bash`; the background process task wrapper lives in
  * `./process-task`.
@@ -198,7 +198,7 @@ export class BashTool implements IBashTool {
     const shellArgs = [
       this.env.shellPath,
       '-c',
-      `cd ${shellQuote(shellCwd)} && ${command}`,
+      `cd ${shellQuote(shellCwd)} || exit 1\n${command}`,
     ];
 
     const noninteractiveEnv: Record<string, string> = {

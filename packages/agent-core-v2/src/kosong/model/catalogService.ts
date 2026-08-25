@@ -91,7 +91,7 @@ import {
   toProtocolProvider,
 } from './catalog';
 import { ModelCatalogErrors } from './errors';
-import { IHostRequestHeaders } from './hostRequestHeaders';
+import { IHostRequestHeaders, isFirstPartyBaseUrl } from './hostRequestHeaders';
 import {
   assembleModelInspection,
   attributeEffectiveFields,
@@ -413,6 +413,7 @@ export class ModelCatalog extends Disposable implements IModelCatalog {
         providerConfig?.type,
         providerConfig?.customHeaders,
         this.hostRequestHeaders.headers,
+        resolvedBaseUrl,
       ),
       capabilities,
       maxContextSize: model.maxContextSize,
@@ -581,13 +582,15 @@ export function resolveOutboundHeaders(
   providerType: string | undefined,
   customHeaders: Readonly<Record<string, string>> | undefined,
   hostHeaders: Readonly<Record<string, string>>,
+  baseUrl?: string,
 ): Readonly<Record<string, string>> {
   // How much of the host identity a vendor receives is declared on its
   // provider definition (`hostHeaders: 'full'`); unregistered vendors get the
   // User-Agent only, so device identity never leaks to unknown endpoints.
   const forwardsAll =
     providerType !== undefined &&
-    getProviderDefinition(providerType)?.hostHeaders === 'full';
+    getProviderDefinition(providerType)?.hostHeaders === 'full' &&
+    isFirstPartyBaseUrl(baseUrl);
   const hostLayer = forwardsAll ? hostHeaders : userAgentOnly(hostHeaders);
   return { ...parseKimiCodeCustomHeaders(), ...hostLayer, ...customHeaders };
 }

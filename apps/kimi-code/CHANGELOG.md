@@ -1,5 +1,20 @@
 # @moonshot-ai/kimi-code
 
+## 0.30.0-kkm.3
+
+### KKM Changes
+
+- Harden cross-provider conversations for Gemini thought signatures, strict OpenAI-compatible tool-call messages, filtered empty responses, reasoning-only assistant turns, Anthropic relays, and undefined model names.
+- Make MCP behavior more reliable by settling cancelled OAuth callbacks, avoiding duplicate `content` and `structuredContent`, and keeping WebSocket connections alive through idle proxies.
+- Improve shell safety and correctness with foreground/background output sanitization, stable background-command working directories, trailing-backslash parsing, and safer Windows command resolution.
+- Complete the Windows Git Bash path bridge and fix Explorer `/select` quoting and footer Git command lookup.
+- Isolate built-in agent profile catalogs per session, restrict fallback plugin skill discovery to each root `SKILL.md`, and gate background questions on active task controls.
+- Prevent abort-listener leaks, preserve answers across cron turns, and show step retry progress instead of appearing stalled.
+- Improve terminal behavior for status replies, CJK URL punctuation, narrow banners, and faster plugin marketplace first paint.
+- Restrict identity headers and OpenAI prompt cache keys to their official HTTPS endpoints.
+
+The complete 30-PR source, commit, deferral, and validation record is maintained in [`UPSTREAM_PORTS.md`](../../UPSTREAM_PORTS.md#batch-2026-08-25--30-个跨厂商基础修复).
+
 ## 0.30.0-kkm.2
 
 ### KKM Changes

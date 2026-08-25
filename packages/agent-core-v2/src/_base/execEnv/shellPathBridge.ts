@@ -147,10 +147,11 @@ export function createShellPathBridge(
   return { toShellPath, fromShellPath };
 }
 
-const bridgeCache = new WeakMap<ShellPathBridgeEnv, ShellPathBridge>();
+const bridgeCache = new Map<string, ShellPathBridge>();
 
 export function getShellPathBridge(env: ShellPathBridgeEnv): ShellPathBridge {
-  const cached = bridgeCache.get(env);
+  const key = `${env.osKind} ${env.shellName} ${env.shellPath}`;
+  const cached = bridgeCache.get(key);
   if (cached !== undefined) return cached;
   const bridge = createShellPathBridge(env, {
     execFileSync: (file, args) =>
@@ -161,6 +162,6 @@ export function getShellPathBridge(env: ShellPathBridgeEnv): ShellPathBridge {
       }),
     isFile: (path) => existsSync(path),
   });
-  bridgeCache.set(env, bridge);
+  bridgeCache.set(key, bridge);
   return bridge;
 }

@@ -26,6 +26,7 @@
  *
  *  - the behavior probes for per-turn intent encoding (cacheKey / thinking /
  *     budget) on the Kimi, OpenAI, and Anthropic wires;
+ *  - reasoning-only assistant history remains valid on every provider wire;
  *  - the per-base `responseFormat` encodings (re-added from the deleted
  *     llmProtocol structured-output suite; morph-seeded kwargs cases that no
  *     longer have a channel are noted where they dropped);
@@ -609,6 +610,7 @@ async function captureAnthropicBody(
   provider: ChatProvider,
   options?: GenerateOptions,
   tools: Tool[] = [],
+  history: Message[] = PROBE_HISTORY,
 ): Promise<{
   readonly params: Record<string, unknown>;
   readonly requestOptions: Record<string, unknown> | undefined;
@@ -632,7 +634,7 @@ async function captureAnthropicBody(
     });
   client.messages.create = create('standard');
   client.beta.messages.create = create('beta');
-  await drain(await provider.generate('', tools, PROBE_HISTORY, options));
+  await drain(await provider.generate('', tools, history, options));
   if (capturedParams === undefined || via === undefined) {
     throw new Error('expected messages.create to be called');
   }
@@ -642,6 +644,7 @@ async function captureAnthropicBody(
 async function captureGoogleBody(
   provider: ChatProvider,
   options?: GenerateOptions,
+  history: Message[] = PROBE_HISTORY,
 ): Promise<Record<string, unknown>> {
   let captured: Record<string, unknown> | undefined;
   const client = sdkClient(provider) as { models: { generateContent: unknown } };
@@ -655,7 +658,7 @@ async function captureGoogleBody(
       modelVersion: 'probe',
     });
   });
-  await drain(await provider.generate('', [], PROBE_HISTORY, options));
+  await drain(await provider.generate('', [], history, options));
   if (captured === undefined) throw new Error('expected models.generateContent to be called');
   return captured;
 }
@@ -784,6 +787,104 @@ describe('per-turn intent wire encoding (behavior probes)', () => {
     // The (kimi, anthropic) trait strips the interleaved-thinking beta and
     // adds nothing else: no beta header reaches the wire at all.
     expect(requestOptions).toBeUndefined();
+  });
+});
+
+describe('reasoning-only assistant history projection', () => {
+  it('adds empty content on the OpenAI Chat Completions wire without dropping reasoning', async () => {
+    const provider = new OpenAILegacyChatProvider({
+      model: 'deepseek-v4-flash',
+      apiKey: 'sk-probe',
+      stream: false,
+    });
+
+    const body = await captureOpenAIBody(provider, undefined, THINK_HISTORY);
+    const messages = body['messages'] as Array<Record<string, unknown>>;
+
+    expect(messages[0]).toEqual({
+      role: 'assistant',
+      content: '',
+      reasoning_content: 'earlier reasoning',
+    });
+  });
+
+  it('keeps unsigned thinking on the Kimi Anthropic wire', async () => {
+    const provider = registry.createChatProvider({
+      protocol: 'anthropic',
+      providerType: 'kimi',
+      modelName: 'kimi-for-coding',
+      apiKey: 'sk-probe',
+    });
+
+    const { params } = await captureAnthropicBody(provider, undefined, [], THINK_HISTORY);
+    const messages = params['messages'] as Array<Record<string, unknown>>;
+
+    expect(messages[0]).toEqual({
+      role: 'assistant',
+      content: [{ type: 'thinking', thinking: 'earlier reasoning' }],
+    });
+  });
+
+  it('keeps unsigned thinking on the Google GenAI wire', async () => {
+    const provider = new GoogleGenAIChatProvider({
+      model: 'gemini-2.5-flash',
+      apiKey: 'sk-probe',
+      stream: false,
+    });
+
+    const body = await captureGoogleBody(provider, undefined, THINK_HISTORY);
+    const contents = body['contents'] as Array<Record<string, unknown>>;
+
+    expect(contents[0]).toEqual({
+      role: 'model',
+      parts: [{ text: 'earlier reasoning', thought: true }],
+    });
+  });
+});
+
+describe('tool-call-only assistant history projection (issue #3017)', () => {
+  it('emits content: null for an assistant message carrying only tool_calls', async () => {
+    const provider = new OpenAILegacyChatProvider({
+      model: 'gpt-4.1',
+      apiKey: 'sk-probe',
+      stream: false,
+    });
+
+    const history: Message[] = [
+      { role: 'user', content: [{ type: 'text', text: 'Add 2 and 3' }], toolCalls: [] },
+      {
+        role: 'assistant',
+        content: [],
+        toolCalls: [
+          { type: 'function', id: 'call_abc123', name: 'add', arguments: '{"a": 2, "b": 3}' },
+        ],
+      },
+      {
+        role: 'tool',
+        content: [{ type: 'text', text: '5' }],
+        toolCallId: 'call_abc123',
+        toolCalls: [],
+      },
+    ];
+
+    const body = await captureOpenAIBody(provider, undefined, history);
+    const messages = body['messages'] as Array<Record<string, unknown>>;
+
+    expect(messages).toEqual([
+      { role: 'user', content: 'Add 2 and 3' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            type: 'function',
+            id: 'call_abc123',
+            function: { name: 'add', arguments: '{"a": 2, "b": 3}' },
+          },
+        ],
+      },
+      { role: 'tool', content: '5', tool_call_id: 'call_abc123' },
+    ]);
   });
 });
 

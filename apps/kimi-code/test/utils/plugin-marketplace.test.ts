@@ -9,7 +9,11 @@ import {
   KIMI_CODE_PLUGIN_MARKETPLACE_URL,
   KIMI_CODE_PLUGIN_MARKETPLACE_URL_ENV,
 } from '#/constant/app';
-import { computeUpdateStatus, loadPluginMarketplace } from '#/utils/plugin-marketplace';
+import {
+  computeUpdateStatus,
+  loadPluginMarketplace,
+  withMarketplaceLatestVersions,
+} from '#/utils/plugin-marketplace';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
@@ -502,4 +506,85 @@ describe('loadPluginMarketplace', () => {
     );
   });
 
+  describe('two-phase version lookup', () => {
+    async function writeCatalog(dir: string) {
+      const file = join(dir, 'marketplace.json');
+      await writeFile(
+        file,
+        JSON.stringify({
+          plugins: [
+            { id: 'demo', displayName: 'Demo', source: 'https://github.com/owner/repo' },
+          ],
+        }),
+        'utf8',
+      );
+      return file;
+    }
+
+    it('skipLatestVersions returns the catalog without querying GitHub', async () => {
+      const fetchImpl = vi.fn(async () => {
+        throw new Error('should not be called');
+      }) as unknown as typeof fetch;
+      const dir = await mkdtemp(join(tmpdir(), 'kimi-plugin-marketplace-'));
+      const file = await writeCatalog(dir);
+
+      const marketplace = await loadPluginMarketplace({
+        workDir: dir,
+        source: file,
+        fetchImpl,
+        skipLatestVersions: true,
+      });
+
+      expect(marketplace.plugins[0]?.version).toBeUndefined();
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it('withMarketplaceLatestVersions fills versions from the latest release redirect', async () => {
+      const fetchImpl = vi.fn(async (input: unknown) => ({
+        ok: false,
+        status: 302,
+        headers: new Headers({
+          location: 'https://github.com/owner/repo/releases/tag/v1.2.3',
+        }),
+        text: async () => '',
+      })) as unknown as typeof fetch;
+      const dir = await mkdtemp(join(tmpdir(), 'kimi-plugin-marketplace-'));
+      const file = await writeCatalog(dir);
+      const marketplace = await loadPluginMarketplace({
+        workDir: dir,
+        source: file,
+        skipLatestVersions: true,
+      });
+
+      const enriched = await withMarketplaceLatestVersions(marketplace, fetchImpl);
+
+      expect(fetchImpl).toHaveBeenCalledWith(
+        'https://github.com/owner/repo/releases/latest',
+        expect.objectContaining({ redirect: 'manual', signal: expect.any(AbortSignal) }),
+      );
+      expect(enriched.plugins[0]?.version).toBe('1.2.3');
+    });
+
+    it('withMarketplaceLatestVersions degrades to a missing version when the lookup aborts', async () => {
+      const fetchImpl = vi.fn(async (_input: unknown, init?: { signal?: AbortSignal }) => {
+        // Simulate the lookup hitting the timeout: undici rejects with the
+        // signal's reason once the AbortSignal fires.
+        throw init?.signal?.aborted === true
+          ? init.signal.reason
+          : new DOMException('This operation was aborted', 'AbortError');
+      }) as unknown as typeof fetch;
+      const dir = await mkdtemp(join(tmpdir(), 'kimi-plugin-marketplace-'));
+      const file = await writeCatalog(dir);
+      const marketplace = await loadPluginMarketplace({
+        workDir: dir,
+        source: file,
+        skipLatestVersions: true,
+      });
+
+      const enriched = await withMarketplaceLatestVersions(marketplace, fetchImpl);
+
+      expect(enriched.plugins[0]?.version).toBeUndefined();
+      expect(enriched.plugins[0]?.id).toBe('demo');
+    });
+  });
 });

@@ -12,6 +12,78 @@
 - KKM 对补丁进行了冲突融合，不保证 KKM 提交 SHA 与上游一致；上游 PR 与固定 head SHA 是来源依据。
 - 每次同步都必须更新本文件，并在 KKM PR 与 Release Notes 中引用对应批次。
 
+## Batch 2026-08-25 — 30 个跨厂商基础修复
+
+- KKM 分支：`agent/upstream-port-20260825`
+- 目标基线：KKM `main` @ `11fe72b0608ea49090f08f5cd2a2863ef817be68`
+- KKM PR：[Pidbid/kkm#8](https://github.com/Pidbid/kkm/pull/8)
+- Release：[v0.30.0-kkm.3](https://github.com/Pidbid/kkm/releases/tag/v0.30.0-kkm.3)
+
+状态：本批次代码验证通过，交付记录由 PR #8、本文件和 Release `v0.30.0-kkm.3` 共同保存。
+
+本批次检查了共同祖先 `425cfdf` 之后的上游官方合并记录和仍开放的社区 PR，共采用 30 个与厂商业务无关的基础修复：20 个移植时已被上游合并，10 个开放社区 PR 固定到下列 head。所有冲突均按 KKM 当前架构融合，没有恢复已删除的上游服务树。
+
+### 上游已合并（20 个）
+
+| Upstream PR | 固定 head SHA | 功能 | KKM 提交 / 处理 |
+|---|---|---|---|
+| [#2645](https://github.com/MoonshotAI/kimi-code/pull/2645) | `0eb1d73f9767` | Windows Explorer `/select` 参数引用 | `11603a6a`，完整移植 |
+| [#2740](https://github.com/MoonshotAI/kimi-code/pull/2740) | `0ce918a00b59` | 内置 Agent profile catalog 按会话隔离 | `c93702a3`，完整移植 |
+| [#2695](https://github.com/MoonshotAI/kimi-code/pull/2695) | `958f23e8681d` | Windows 启动阶段禁止裸命令劫持 | `ca25d48c`，保留命令解析与延迟 fd 检测；不引入 KKM 缺失的 trust-gate 部分 |
+| [#2838](https://github.com/MoonshotAI/kimi-code/pull/2838) | `a438fa818051` | footer Git 状态命令经 PATH 解析 | `b3c87623`，完整移植 |
+| [#2847](https://github.com/MoonshotAI/kimi-code/pull/2847) | `688539eec4cb` | 插件 fallback 只发现根 `SKILL.md` | `ff819427`，融合当前 skill scanner |
+| [#2884](https://github.com/MoonshotAI/kimi-code/pull/2884) | `f8c50c5b7438` | 窄终端下 banner 保持可读 | `e7ae2b67`，完整移植 |
+| [#2899](https://github.com/MoonshotAI/kimi-code/pull/2899) | `dd73abcdbca1` | MCP OAuth 取消后正确结束回调 | `fc5f2129`，完整移植 |
+| [#2863](https://github.com/MoonshotAI/kimi-code/pull/2863) | `578e303e7ca9` | 清理后台任务输出中的终端控制字符 | `303e113d`，完整移植 |
+| [#2917](https://github.com/MoonshotAI/kimi-code/pull/2917) | `95f43bc4e2b0` | CJK 标点不再被误识别为 URL | `e488d061`，仅移植通用 tokenizer 修复 |
+| [#2914](https://github.com/MoonshotAI/kimi-code/pull/2914) | `6bd9d38fc70e` | 保留 Gemini thought signature 与尾随用户文本顺序 | `7da3d1a0`，完整移植 |
+| [#3052](https://github.com/MoonshotAI/kimi-code/pull/3052) | `cf41d12bf8a3` | 严格 OpenAI 接口接受纯工具调用 assistant 消息 | `172a6476`，完整移植 |
+| [#3101](https://github.com/MoonshotAI/kimi-code/pull/3101) | `827d3264f877` | 供应商过滤为空时快速失败 | `d574d477`，完整移植 |
+| [#2200](https://github.com/MoonshotAI/kimi-code/pull/2200) | `e424fd402bdc` | Windows Git Bash 文件路径桥接最终修复 | `9d67f227`，更新 KKM 已有早期版本的缓存语义 |
+| [#3154](https://github.com/MoonshotAI/kimi-code/pull/3154) | `cb70f59d8d53` | cron turn 结束时保留上一轮回答 | `2e7fe001`，完整移植 |
+| [#3159](https://github.com/MoonshotAI/kimi-code/pull/3159) | `89067c419fd1` | 仅在 Task 控制有效时允许后台提问 | `df14f257`，保留 KKM 的 `QuestionResult.note` 行为 |
+| [#3219](https://github.com/MoonshotAI/kimi-code/pull/3219) | `36bb9a141bc4` | 插件市场先首屏渲染、后查询版本 | `d599142b`，适配 KKM 现有 marketplace 工具并加 5 秒上限 |
+| [#3241](https://github.com/MoonshotAI/kimi-code/pull/3241) | `906e2f039640` | 修复 AbortSignal listener 上限和泄漏 | `448704c9`，完整移植 |
+| [#2819](https://github.com/MoonshotAI/kimi-code/pull/2819) | `517aa266992d` | reasoning-only assistant turn 的安全投影 | `24fa81c6`，完整移植 |
+| [#2813](https://github.com/MoonshotAI/kimi-code/pull/2813) | `6ab47dc11fef` | WebSocket heartbeat 穿越空闲代理 | `538579e4`，完整移植 |
+| [#2825](https://github.com/MoonshotAI/kimi-code/pull/2825) | `5fd019c34940` | 活动指示器显示 step retry 进度 | `7b91eaf1`，只采用当前架构所需事件与 UI |
+
+### KKM 提前采用的开放社区 PR（10 个）
+
+| Upstream PR | 固定 head SHA | 功能 | KKM 提交 / 风险控制 |
+|---|---|---|---|
+| [#2445](https://github.com/MoonshotAI/kimi-code/pull/2445) | `a3d73c25c632` | 忽略终端状态回复，避免被当作用户输入 | `6b0efbe7`，终端层小补丁 |
+| [#2581](https://github.com/MoonshotAI/kimi-code/pull/2581) | `0877110261f8` | 完整身份 header 只发给 HTTPS 官方端点 | `bc4da03d`–`98dcaee6`，同时检查 host 与协议 |
+| [#2747](https://github.com/MoonshotAI/kimi-code/pull/2747) | `d7b649bc63bd` | permission glob 将 subject 视为不透明文本 | `b47365f3`–`6cbe923c`，增加 NUL 防护与回归测试 |
+| [#2761](https://github.com/MoonshotAI/kimi-code/pull/2761) | `2c5e7cd3ea6b` | `prompt_cache_key` 只发送给官方 OpenAI 端点 | `6aa21935`–`7e58266d`，保留 changeset 与测试 |
+| [#2919](https://github.com/MoonshotAI/kimi-code/pull/2919) | `f7fa06bd76a0` | 清理前台 Bash 输出中的终端控制字符 | `564d8830`，与后台输出修复成组采用 |
+| [#2957](https://github.com/MoonshotAI/kimi-code/pull/2957) | `ba1a8bb32927` | 含 `&` 的 Bash 命令继续应用 cwd | `c0bde947`，适配 KKM 当前 argv runner |
+| [#3003](https://github.com/MoonshotAI/kimi-code/pull/3003) | `558b1a6f7103` | Anthropic profile 容忍缺失 model name | `c9fd76ff`，小型协议兼容修复 |
+| [#3207](https://github.com/MoonshotAI/kimi-code/pull/3207) | `a0fdafe1e06b` | Anthropic relay 缺少 text delta 时不崩溃 | `3d45678d`，带协议回归测试 |
+| [#3245](https://github.com/MoonshotAI/kimi-code/pull/3245) | `10cb09c0af6e` | 尾随反斜杠不再令 Bash 解析整体降级 | `b0bf024d`，parser/lexer 小补丁与测试 |
+| [#3234](https://github.com/MoonshotAI/kimi-code/pull/3234) | `c7814b9966bd` | MCP 向模型发送 `content` 或 `structuredContent`，不重复发送 | `ca26323a`–`75c1ed27`，适配现有 stdio v2 测试路径 |
+
+### 已评估但本批次不合并
+
+| Upstream PR | 结论 / 后续条件 |
+|---|---|
+| [#3122](https://github.com/MoonshotAI/kimi-code/pull/3122) | 有价值，但依赖 KKM 已删除的 `acp-server` 和新版 session lifecycle；需整套架构到位后移植 |
+| [#2748](https://github.com/MoonshotAI/kimi-code/pull/2748) | MCP 重连方向有价值，但与 KKM 已有 expired-session 重连语义冲突；需先统一 transport 状态机 |
+| [#3160](https://github.com/MoonshotAI/kimi-code/pull/3160), [#3161](https://github.com/MoonshotAI/kimi-code/pull/3161), [#3183](https://github.com/MoonshotAI/kimi-code/pull/3183) | 依赖 KKM 已删除的 `packages/acp-server`，不做残缺移植 |
+| [#3227](https://github.com/MoonshotAI/kimi-code/pull/3227), [#3096](https://github.com/MoonshotAI/kimi-code/pull/3096), [#3240](https://github.com/MoonshotAI/kimi-code/pull/3240) | 输出限制、陈旧 Edit 防护和 retry 改进有价值，但依赖更新的 v2 lifecycle；继续关注 |
+| [#2826](https://github.com/MoonshotAI/kimi-code/pull/2826), [#3054](https://github.com/MoonshotAI/kimi-code/pull/3054) | session 分页和 Shell 折叠为可用 UI 改进，优先级低于本批可靠性修复，留待 UI 专项批次 |
+| [#2994](https://github.com/MoonshotAI/kimi-code/pull/2994) | 原生分阶段自动更新绑定官方 CDN/更新模型，不符合脱离厂商生态的筛选标准 |
+| [#3034](https://github.com/MoonshotAI/kimi-code/pull/3034), [#3244](https://github.com/MoonshotAI/kimi-code/pull/3244) | Remote Control 依赖 Kimi 托管 relay/OAuth，属于厂商业务，明确排除 |
+
+### 本批次验证
+
+- 本地静态检查：`git diff --check`、冲突标记扫描、版本/`kkm` bin 校验和新增 URL/身份字段审计均通过。
+- 本地依赖安装：执行环境无法访问 npm registry，不能在本机重建 `node_modules`；完整 lint、typecheck、build 和测试以 GitHub Actions 为准。
+- 验证提交：`8bf6a00c9201433fc4855fd1f6ca3c1ec647fef7`。
+- [CI run 32879516934](https://github.com/Pidbid/kkm/actions/runs/32879516934)：`lint`、`typecheck`、`build`、5 个测试分片和 `pi-tui` 全部通过；Windows job 按工作流条件跳过。
+- [Nix Build run 32879516800](https://github.com/Pidbid/kkm/actions/runs/32879516800)：flake workspace 同步检查和 `nix build .#kimi-code` 全部通过。
+- 合并记录：[Pidbid/kkm#8](https://github.com/Pidbid/kkm/pull/8)；发布产物与校验文件见 [v0.30.0-kkm.3](https://github.com/Pidbid/kkm/releases/tag/v0.30.0-kkm.3)。
+
 ## Batch 2026-08-04 — 官方与社区通用修复
 
 KKM 分支：`agent/upstream-port-20260804`  

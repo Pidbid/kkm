@@ -309,6 +309,19 @@ describe('generate()', () => {
     expect(err.message).toContain('provider filtered the response');
   });
 
+  it('marks a provider-filtered think-only response as non-retryable', async () => {
+    const stream = createMockStream([{ type: 'think', think: 'filtered mid-thought' }], {
+      finishReason: 'filtered',
+      rawFinishReason: 'content_filter',
+    });
+    const provider = createMockProvider(stream);
+
+    const caught = await generate(provider, '', [], []).catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(APIEmptyResponseError);
+    expect(isRetryableGenerateError(caught)).toBe(false);
+  });
+
   it('throws APIEmptyResponseError for think + empty/whitespace text', async () => {
     const stream = createMockStream([
       { type: 'think', think: 'Thinking...' },

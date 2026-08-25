@@ -8,6 +8,7 @@ import { gt, valid } from 'semver';
 import {
   KIMI_CODE_PLUGIN_MARKETPLACE_URL,
   KIMI_CODE_PLUGIN_MARKETPLACE_URL_ENV,
+  MARKETPLACE_VERSION_LOOKUP_TIMEOUT_MS,
 } from '#/constant/app';
 
 export const PLUGIN_MARKETPLACE_TIERS = ['official', 'curated'] as const;
@@ -71,6 +72,19 @@ export interface LoadPluginMarketplaceOptions {
   readonly workDir: string;
   readonly source?: string;
   readonly fetchImpl?: typeof fetch;
+  readonly skipLatestVersions?: boolean;
+}
+
+export async function withMarketplaceLatestVersions(
+  marketplace: PluginMarketplace,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PluginMarketplace> {
+  const timedFetch: typeof fetch = (input, init) =>
+    fetchImpl(input, {
+      ...init,
+      signal: AbortSignal.timeout(MARKETPLACE_VERSION_LOOKUP_TIMEOUT_MS),
+    });
+  return withLatestVersions(marketplace, timedFetch);
 }
 
 export async function loadPluginMarketplace(
@@ -90,9 +104,15 @@ export async function loadPluginMarketplace(
       configuredSource === undefined ? await getSourceCheckoutMarketplaceLocation() : undefined;
     if (fallback === undefined) throw error;
     raw = await readMarketplaceText(fallback, fetchImpl);
-    return withLatestVersions(parsePluginMarketplace(raw, fallback), fetchImpl);
+    const marketplace = parsePluginMarketplace(raw, fallback);
+    return options.skipLatestVersions === true
+      ? marketplace
+      : withLatestVersions(marketplace, fetchImpl);
   }
-  return withLatestVersions(parsePluginMarketplace(raw, location), fetchImpl);
+  const marketplace = parsePluginMarketplace(raw, location);
+  return options.skipLatestVersions === true
+    ? marketplace
+    : withLatestVersions(marketplace, fetchImpl);
 }
 
 async function withLatestVersions(

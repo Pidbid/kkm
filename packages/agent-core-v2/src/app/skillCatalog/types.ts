@@ -1,3 +1,10 @@
+/**
+ * `skillCatalog` domain (L3) — shared skill discovery and catalog data.
+ *
+ * Defines the filesystem source metadata consumed by `skillCatalog` and
+ * plugin discovery, including root-only plugin skill fallbacks.
+ */
+
 export type SkillSource = 'project' | 'user' | 'extra' | 'builtin';
 
 export interface SkillMetadata {
@@ -39,6 +46,7 @@ export interface SkillRoot {
   readonly path: string;
   readonly source: SkillSource;
   readonly plugin?: SkillPluginContext;
+  readonly scanMode?: 'directory' | 'root-skill-only';
 }
 
 export interface SkillPluginContext {

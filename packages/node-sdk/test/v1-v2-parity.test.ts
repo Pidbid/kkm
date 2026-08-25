@@ -3764,6 +3764,27 @@ describe('v1↔v2 session MCP parity', () => {
     return pair;
   }
 
+  async function waitForInitialMcpConnect(
+    client: SDKRpcClientBase,
+    input: { readonly sessionId: string },
+  ) {
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      const servers = await client.listMcpServers(input);
+      const byName = new Map(servers.map((server) => [server.name, server]));
+      if (
+        byName.get('working')?.status === 'connected' &&
+        byName.get('broken')?.status === 'failed'
+      ) {
+        return servers;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error('timed out waiting for initial MCP connections');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
   it('listMcpServers reports the same entries after the initial connect', async () => {
     const restoreEnv = scrubConfigEnv();
     const pair = await makeSessionMcpPair(SESSION_MCP_FIXTURE);
@@ -3771,8 +3792,8 @@ describe('v1↔v2 session MCP parity', () => {
       await createOnBoth(pair, { id: 'session_parity_mcp_list' });
       const input = { sessionId: 'session_parity_mcp_list' } as const;
       const [v1Servers, v2Servers] = await Promise.all([
-        pair.v1.listMcpServers(input),
-        pair.v2.listMcpServers(input),
+        waitForInitialMcpConnect(pair.v1, input),
+        waitForInitialMcpConnect(pair.v2, input),
       ]);
       expect(normalize(v2Servers, 'name')).toEqual(normalize(v1Servers, 'name'));
       const byName = new Map(v1Servers.map((server) => [server.name, server]));
