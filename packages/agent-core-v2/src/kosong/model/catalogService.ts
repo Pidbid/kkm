@@ -91,7 +91,7 @@ import {
   toProtocolProvider,
 } from './catalog';
 import { ModelCatalogErrors } from './errors';
-import { IHostRequestHeaders } from './hostRequestHeaders';
+import { IHostRequestHeaders, isFirstPartyBaseUrl } from './hostRequestHeaders';
 import {
   assembleModelInspection,
   attributeEffectiveFields,
@@ -593,17 +593,6 @@ export function resolveOutboundHeaders(
     isFirstPartyBaseUrl(baseUrl);
   const hostLayer = forwardsAll ? hostHeaders : userAgentOnly(hostHeaders);
   return { ...parseKimiCodeCustomHeaders(), ...hostLayer, ...customHeaders };
-}
-
-const FIRST_PARTY_HOSTS = new Set(['api.moonshot.ai', 'api.moonshot.cn']);
-
-function isFirstPartyBaseUrl(baseUrl: string | undefined): boolean {
-  if (baseUrl === undefined) return true;
-  try {
-    return FIRST_PARTY_HOSTS.has(new URL(baseUrl).hostname);
-  } catch {
-    return false;
-  }
 }
 
 function userAgentOnly(headers: Readonly<Record<string, string>>): Record<string, string> {
