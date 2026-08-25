@@ -131,6 +131,7 @@ import {
   type LoginProgressSpinnerHandle,
   type QueuedMessage,
   type SteerInputItem,
+  type StepRetryState,
   type TranscriptEntry,
   type TUIStartupOptions,
   type TUIStartupState,
@@ -144,6 +145,7 @@ import { extractMediaAttachments, rewriteMediaPlaceholders } from './utils/image
 import { REPLAY_TURN_LIMIT } from './utils/message-replay';
 import { hasPatchChanges } from './utils/object-patch';
 import { sessionRowsForPicker } from './utils/session-picker-rows';
+import { formatStepRetryDetail, formatStepRetryLabel } from './utils/step-retry';
 import { capStoredShellOutput, formatBashOutputForDisplay } from './utils/shell-output';
 import { combineStartupNotice, isOAuthLoginRequiredError } from './utils/startup';
 import { installTerminalFocusTracking } from './utils/terminal-focus';
@@ -209,6 +211,10 @@ function loadingTipKind(mode: EffectiveActivityPaneMode): LoadingTipKind | undef
   return undefined;
 }
 
+function waitingSpinnerLabel(retry: StepRetryState | null): string {
+  return retry === null ? '' : formatStepRetryLabel(retry);
+}
+
 function sameStringArrays(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
@@ -240,6 +246,7 @@ function createInitialAppState(input: KimiTUIStartupInput): AppState {
     isReplaying: false,
     streamingPhase: 'idle',
     streamingStartTime: 0,
+    stepRetry: null,
     theme: input.tuiConfig.theme,
     version: input.version,
     editorCommand: input.tuiConfig.editorCommand,
@@ -921,6 +928,7 @@ export class KimiTUI {
       await this.harness.close();
     } finally {
       this.sessionEventHandler.stopAllMcpServerStatusSpinners();
+      this.sessionEventHandler.clearStepRetryAttemptTimer();
       this.uninstallRainbowDance();
       try {
         await this.state.terminal.drainInput();
@@ -2543,7 +2551,13 @@ export class KimiTUI {
     }
     this.syncTerminalProgress(this.shouldShowTerminalProgress(effectiveMode));
     const placeSpinnerInAgentSwarm = this.shouldPlaceActivitySpinnerInAgentSwarm(effectiveMode);
-    const activityModeKey = `${effectiveMode}:${placeSpinnerInAgentSwarm ? 'swarm' : 'pane'}`;
+    // Carry the retry state in the mode key so an incoming/cleared
+    // `turn.step.retrying` rebuilds the waiting pane with fresh label and
+    // detail instead of hitting the cached-pane early return below.
+    const retry = effectiveMode === 'waiting' ? this.state.appState.stepRetry : null;
+    const retryKey =
+      retry === null ? '' : `${formatStepRetryLabel(retry)}|${formatStepRetryDetail(retry)}`;
+    const activityModeKey = `${effectiveMode}:${placeSpinnerInAgentSwarm ? 'swarm' : 'pane'}:${retryKey}`;
 
     if (
       activityModeKey === this.lastActivityMode &&
@@ -2565,14 +2579,16 @@ export class KimiTUI {
         this.state.ui.requestRender();
         return;
       case 'waiting': {
-        const spinner = this.ensureActivitySpinner('moon');
+        const stepRetry = this.state.appState.stepRetry;
+        const spinner = this.ensureActivitySpinner('moon', waitingSpinnerLabel(stepRetry));
         this.syncAgentSwarmActivitySpinner(placeSpinnerInAgentSwarm ? spinner : undefined);
         if (placeSpinnerInAgentSwarm) break;
         this.state.activityContainer.addChild(
           new ActivityPaneComponent({
             mode: 'waiting',
             spinner,
-            tip: this.currentLoadingTip?.tip,
+            tip: stepRetry === null ? this.currentLoadingTip?.tip : undefined,
+            detail: stepRetry === null ? undefined : formatStepRetryDetail(stepRetry),
           }),
         );
         break;
