@@ -4,7 +4,7 @@
  * Discovers skill bundles by walking caller-supplied roots and parsing each
  * SKILL.md through `parser`. Provides the App-scoped filesystem backend for
  * `ISkillDiscovery` and the same stateless path for `PluginManager`'s standalone
- * API; other consumers stay filesystem-agnostic through the interface.
+ * API; root-only plugin fallbacks exclude sibling docs and nested directories.
  */
 
 import { promises as fs } from 'node:fs';
@@ -50,6 +50,21 @@ export async function discoverFileSkills(
     subSkillParentName?: string,
   ): Promise<void> {
     if (isSkillLoadAborted(signal) || depth > SKILL_SCAN_MAX_DEPTH) return;
+
+    if (root.scanMode === 'root-skill-only') {
+      const rootSkillMd = path.join(dirPath, 'SKILL.md');
+      if (await isFile(rootSkillMd)) {
+        await parseAndRegister({
+          byDiscoveryKey,
+          skipped,
+          warn,
+          skillMdPath: rootSkillMd,
+          skillDirName: path.basename(dirPath),
+          root,
+        });
+      }
+      return;
+    }
 
     let entries: readonly string[];
     try {
