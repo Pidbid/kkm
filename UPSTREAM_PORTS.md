@@ -17,9 +17,9 @@
 - KKM 分支：`agent/upstream-port-20260825`
 - 目标基线：KKM `main` @ `11fe72b0608ea49090f08f5cd2a2863ef817be68`
 - KKM PR：[Pidbid/kkm#8](https://github.com/Pidbid/kkm/pull/8)
-- 目标 Release：`v0.30.0-kkm.3`
+- Release：[v0.30.0-kkm.3](https://github.com/Pidbid/kkm/releases/tag/v0.30.0-kkm.3)
 
-状态：已完成本地移植与静态检查，等待 GitHub Actions 验证。
+状态：本批次代码验证通过，交付记录由 PR #8、本文件和 Release `v0.30.0-kkm.3` 共同保存。
 
 本批次检查了共同祖先 `425cfdf` 之后的上游官方合并记录和仍开放的社区 PR，共采用 30 个与厂商业务无关的基础修复：20 个移植时已被上游合并，10 个开放社区 PR 固定到下列 head。所有冲突均按 KKM 当前架构融合，没有恢复已删除的上游服务树。
 
@@ -79,8 +79,10 @@
 
 - 本地静态检查：`git diff --check`、冲突标记扫描、版本/`kkm` bin 校验和新增 URL/身份字段审计均通过。
 - 本地依赖安装：执行环境无法访问 npm registry，不能在本机重建 `node_modules`；完整 lint、typecheck、build 和测试以 GitHub Actions 为准。
-- GitHub Actions：PR 创建后补充 run 链接与最终提交。
-- Release：合并且原生构建全部成功后补充链接和产物数量。
+- 验证提交：`8bf6a00c9201433fc4855fd1f6ca3c1ec647fef7`。
+- [CI run 32879516934](https://github.com/Pidbid/kkm/actions/runs/32879516934)：`lint`、`typecheck`、`build`、5 个测试分片和 `pi-tui` 全部通过；Windows job 按工作流条件跳过。
+- [Nix Build run 32879516800](https://github.com/Pidbid/kkm/actions/runs/32879516800)：flake workspace 同步检查和 `nix build .#kimi-code` 全部通过。
+- 合并记录：[Pidbid/kkm#8](https://github.com/Pidbid/kkm/pull/8)；发布产物与校验文件见 [v0.30.0-kkm.3](https://github.com/Pidbid/kkm/releases/tag/v0.30.0-kkm.3)。
 
 ## Batch 2026-08-04 — 官方与社区通用修复
 
