@@ -332,8 +332,8 @@ export class KimiTUI {
   readonly pluginCommandMap = new Map<string, string>();
   private readonly imageStore = new ImageAttachmentStore();
   // Detected lazily in startBackgroundFdAutocomplete() — detection spawns
-  // `fd --version`, which must not happen before the workspace trust gate:
-  // on Windows a bare command name resolves into the (untrusted) cwd first.
+  // `fd --version`, which must not happen during early startup: on Windows a
+  // bare command name resolves into the current (potentially untrusted) cwd first.
   private fdPath: string | null = null;
   private fdDownloadStarted = false;
   sessionEventUnsubscribe: (() => void) | undefined;
@@ -575,19 +575,9 @@ export class KimiTUI {
     this.registerSignalHandlers();
     // Outer try rolls back signal listeners on startup failure.
     try {
-      // The workspace trust gate must run before anything else in startup —
-      // including the migration branch: a workspace that needs migration is
-      // not implicitly trusted, and later startup steps spawn child processes.
-      startupTrace('trustPrompt:begin');
-      const trustPromptStartedLoop = await this.maybeRunWorkspaceTrustPrompt();
-      startupTrace('trustPrompt:end');
-
       if (this.migrationPlan !== null) {
         // Migration needs the event loop running first (pi-tui component).
-        // When the trust prompt already started it, starting it again would
-        // re-run pi-tui's terminal.start() — stacking a second Kitty
-        // keyboard-protocol push and duplicate stdin listeners.
-        if (!trustPromptStartedLoop) this.startEventLoop();
+        this.startEventLoop();
         try {
           const migrationResult = await this.runMigrationScreen(this.migrationPlan);
           if (this.migrateOnly) {

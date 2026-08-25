@@ -29,7 +29,7 @@
 |---|---|---|---|
 | [#2645](https://github.com/MoonshotAI/kimi-code/pull/2645) | `0eb1d73f9767` | Windows Explorer `/select` 参数引用 | `11603a6a`，完整移植 |
 | [#2740](https://github.com/MoonshotAI/kimi-code/pull/2740) | `0ce918a00b59` | 内置 Agent profile catalog 按会话隔离 | `c93702a3`，完整移植 |
-| [#2695](https://github.com/MoonshotAI/kimi-code/pull/2695) | `958f23e8681d` | Windows 信任确认前禁止裸命令劫持 | `ca25d48c`，融合 KKM 启动跟踪逻辑 |
+| [#2695](https://github.com/MoonshotAI/kimi-code/pull/2695) | `958f23e8681d` | Windows 启动阶段禁止裸命令劫持 | `ca25d48c`，保留命令解析与延迟 fd 检测；不引入 KKM 缺失的 trust-gate 部分 |
 | [#2838](https://github.com/MoonshotAI/kimi-code/pull/2838) | `a438fa818051` | footer Git 状态命令经 PATH 解析 | `b3c87623`，完整移植 |
 | [#2847](https://github.com/MoonshotAI/kimi-code/pull/2847) | `688539eec4cb` | 插件 fallback 只发现根 `SKILL.md` | `ff819427`，融合当前 skill scanner |
 | [#2884](https://github.com/MoonshotAI/kimi-code/pull/2884) | `f8c50c5b7438` | 窄终端下 banner 保持可读 | `e7ae2b67`，完整移植 |
