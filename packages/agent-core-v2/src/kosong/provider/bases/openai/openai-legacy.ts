@@ -158,7 +158,7 @@ export interface OpenAILegacyGenerationKwargs {
 
 interface OpenAIMessage {
   role: string;
-  content?: string | OpenAIContentPart[] | undefined;
+  content?: string | OpenAIContentPart[] | null | undefined;
   tool_calls?: OpenAIToolCallOut[] | undefined;
   tool_call_id?: string | undefined;
   name?: string | undefined;
@@ -280,6 +280,10 @@ function convertMessage(
 
   if (message.toolCallId !== undefined) {
     result.tool_call_id = message.toolCallId;
+  }
+
+  if (message.role === 'assistant' && result.content === undefined) {
+    result.content = null;
   }
 
   // Round-trip thinking under the dialect the endpoint actually spoke
