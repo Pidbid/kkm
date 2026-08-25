@@ -22,6 +22,8 @@
  *    tool-result `extract_text` fallback and tool-declaration-only skip are
  *    handed over to the trait wholesale: every history message is
  *    base-converted, post-processed by the hook, and dropped on `null`.
+ *  - A reasoning-only assistant keeps its reasoning field and carries an
+ *    explicit empty `content` value for strict Chat Completions gateways.
  */
 
 import OpenAI from 'openai';
@@ -280,6 +282,15 @@ function convertMessage(
 
   if (message.toolCallId !== undefined) {
     result.tool_call_id = message.toolCallId;
+  }
+
+  if (
+    message.role === 'assistant' &&
+    hasReasoningPart &&
+    result.content === undefined &&
+    result.tool_calls === undefined
+  ) {
+    result.content = '';
   }
 
   if (message.role === 'assistant' && result.content === undefined) {
