@@ -27,41 +27,41 @@
 
 | Upstream PR | 固定 head SHA | 功能 | KKM 提交 / 处理 |
 |---|---|---|---|
-| [#2645](https://github.com/MoonshotAI/kimi-code/pull/2645) | `0eb1d73f9767` | Windows Explorer `/select` 参数引用 | `02e90e8b`，完整移植 |
-| [#2740](https://github.com/MoonshotAI/kimi-code/pull/2740) | `0ce918a00b59` | 内置 Agent profile catalog 按会话隔离 | `c4d40b6c`，完整移植 |
-| [#2695](https://github.com/MoonshotAI/kimi-code/pull/2695) | `958f23e8681d` | Windows 信任确认前禁止裸命令劫持 | `ad19195c`，融合 KKM 启动跟踪逻辑 |
-| [#2838](https://github.com/MoonshotAI/kimi-code/pull/2838) | `a438fa818051` | footer Git 状态命令经 PATH 解析 | `50f6e883`，完整移植 |
-| [#2847](https://github.com/MoonshotAI/kimi-code/pull/2847) | `688539eec4cb` | 插件 fallback 只发现根 `SKILL.md` | `af2824d6`，融合当前 skill scanner |
-| [#2884](https://github.com/MoonshotAI/kimi-code/pull/2884) | `f8c50c5b7438` | 窄终端下 banner 保持可读 | `f1ee8e0d`，完整移植 |
-| [#2899](https://github.com/MoonshotAI/kimi-code/pull/2899) | `dd73abcdbca1` | MCP OAuth 取消后正确结束回调 | `2638484b`，完整移植 |
-| [#2863](https://github.com/MoonshotAI/kimi-code/pull/2863) | `578e303e7ca9` | 清理后台任务输出中的终端控制字符 | `eb5e8130`，完整移植 |
-| [#2917](https://github.com/MoonshotAI/kimi-code/pull/2917) | `95f43bc4e2b0` | CJK 标点不再被误识别为 URL | `b29cbf26`，仅移植通用 tokenizer 修复 |
-| [#2914](https://github.com/MoonshotAI/kimi-code/pull/2914) | `6bd9d38fc70e` | 保留 Gemini thought signature 与尾随用户文本顺序 | `60a487e3`，完整移植 |
-| [#3052](https://github.com/MoonshotAI/kimi-code/pull/3052) | `cf41d12bf8a3` | 严格 OpenAI 接口接受纯工具调用 assistant 消息 | `529ef5c3`，完整移植 |
-| [#3101](https://github.com/MoonshotAI/kimi-code/pull/3101) | `827d3264f877` | 供应商过滤为空时快速失败 | `90f201b8`，完整移植 |
-| [#2200](https://github.com/MoonshotAI/kimi-code/pull/2200) | `e424fd402bdc` | Windows Git Bash 文件路径桥接最终修复 | `7b7d2968`，更新 KKM 已有早期版本的缓存语义 |
-| [#3154](https://github.com/MoonshotAI/kimi-code/pull/3154) | `cb70f59d8d53` | cron turn 结束时保留上一轮回答 | `ae594f3c`，完整移植 |
-| [#3159](https://github.com/MoonshotAI/kimi-code/pull/3159) | `89067c419fd1` | 仅在 Task 控制有效时允许后台提问 | `59205d5e`，保留 KKM 的 `QuestionResult.note` 行为 |
-| [#3219](https://github.com/MoonshotAI/kimi-code/pull/3219) | `36bb9a141bc4` | 插件市场先首屏渲染、后查询版本 | `63dc28f2`，适配 KKM 现有 marketplace 工具并加 5 秒上限 |
-| [#3241](https://github.com/MoonshotAI/kimi-code/pull/3241) | `906e2f039640` | 修复 AbortSignal listener 上限和泄漏 | `a332479c`，完整移植 |
-| [#2819](https://github.com/MoonshotAI/kimi-code/pull/2819) | `517aa266992d` | reasoning-only assistant turn 的安全投影 | `9b0359a3`，完整移植 |
-| [#2813](https://github.com/MoonshotAI/kimi-code/pull/2813) | `6ab47dc11fef` | WebSocket heartbeat 穿越空闲代理 | `5a507b0c`，完整移植 |
-| [#2825](https://github.com/MoonshotAI/kimi-code/pull/2825) | `5fd019c34940` | 活动指示器显示 step retry 进度 | `7ede5d36`，只采用当前架构所需事件与 UI |
+| [#2645](https://github.com/MoonshotAI/kimi-code/pull/2645) | `0eb1d73f9767` | Windows Explorer `/select` 参数引用 | `11603a6a`，完整移植 |
+| [#2740](https://github.com/MoonshotAI/kimi-code/pull/2740) | `0ce918a00b59` | 内置 Agent profile catalog 按会话隔离 | `c93702a3`，完整移植 |
+| [#2695](https://github.com/MoonshotAI/kimi-code/pull/2695) | `958f23e8681d` | Windows 信任确认前禁止裸命令劫持 | `ca25d48c`，融合 KKM 启动跟踪逻辑 |
+| [#2838](https://github.com/MoonshotAI/kimi-code/pull/2838) | `a438fa818051` | footer Git 状态命令经 PATH 解析 | `b3c87623`，完整移植 |
+| [#2847](https://github.com/MoonshotAI/kimi-code/pull/2847) | `688539eec4cb` | 插件 fallback 只发现根 `SKILL.md` | `ff819427`，融合当前 skill scanner |
+| [#2884](https://github.com/MoonshotAI/kimi-code/pull/2884) | `f8c50c5b7438` | 窄终端下 banner 保持可读 | `e7ae2b67`，完整移植 |
+| [#2899](https://github.com/MoonshotAI/kimi-code/pull/2899) | `dd73abcdbca1` | MCP OAuth 取消后正确结束回调 | `fc5f2129`，完整移植 |
+| [#2863](https://github.com/MoonshotAI/kimi-code/pull/2863) | `578e303e7ca9` | 清理后台任务输出中的终端控制字符 | `303e113d`，完整移植 |
+| [#2917](https://github.com/MoonshotAI/kimi-code/pull/2917) | `95f43bc4e2b0` | CJK 标点不再被误识别为 URL | `e488d061`，仅移植通用 tokenizer 修复 |
+| [#2914](https://github.com/MoonshotAI/kimi-code/pull/2914) | `6bd9d38fc70e` | 保留 Gemini thought signature 与尾随用户文本顺序 | `7da3d1a0`，完整移植 |
+| [#3052](https://github.com/MoonshotAI/kimi-code/pull/3052) | `cf41d12bf8a3` | 严格 OpenAI 接口接受纯工具调用 assistant 消息 | `172a6476`，完整移植 |
+| [#3101](https://github.com/MoonshotAI/kimi-code/pull/3101) | `827d3264f877` | 供应商过滤为空时快速失败 | `d574d477`，完整移植 |
+| [#2200](https://github.com/MoonshotAI/kimi-code/pull/2200) | `e424fd402bdc` | Windows Git Bash 文件路径桥接最终修复 | `9d67f227`，更新 KKM 已有早期版本的缓存语义 |
+| [#3154](https://github.com/MoonshotAI/kimi-code/pull/3154) | `cb70f59d8d53` | cron turn 结束时保留上一轮回答 | `2e7fe001`，完整移植 |
+| [#3159](https://github.com/MoonshotAI/kimi-code/pull/3159) | `89067c419fd1` | 仅在 Task 控制有效时允许后台提问 | `df14f257`，保留 KKM 的 `QuestionResult.note` 行为 |
+| [#3219](https://github.com/MoonshotAI/kimi-code/pull/3219) | `36bb9a141bc4` | 插件市场先首屏渲染、后查询版本 | `d599142b`，适配 KKM 现有 marketplace 工具并加 5 秒上限 |
+| [#3241](https://github.com/MoonshotAI/kimi-code/pull/3241) | `906e2f039640` | 修复 AbortSignal listener 上限和泄漏 | `448704c9`，完整移植 |
+| [#2819](https://github.com/MoonshotAI/kimi-code/pull/2819) | `517aa266992d` | reasoning-only assistant turn 的安全投影 | `24fa81c6`，完整移植 |
+| [#2813](https://github.com/MoonshotAI/kimi-code/pull/2813) | `6ab47dc11fef` | WebSocket heartbeat 穿越空闲代理 | `538579e4`，完整移植 |
+| [#2825](https://github.com/MoonshotAI/kimi-code/pull/2825) | `5fd019c34940` | 活动指示器显示 step retry 进度 | `7b91eaf1`，只采用当前架构所需事件与 UI |
 
 ### KKM 提前采用的开放社区 PR（10 个）
 
 | Upstream PR | 固定 head SHA | 功能 | KKM 提交 / 风险控制 |
 |---|---|---|---|
-| [#2445](https://github.com/MoonshotAI/kimi-code/pull/2445) | `a3d73c25c632` | 忽略终端状态回复，避免被当作用户输入 | `ad088a39`，终端层小补丁 |
-| [#2581](https://github.com/MoonshotAI/kimi-code/pull/2581) | `0877110261f8` | 完整身份 header 只发给 HTTPS 官方端点 | `efc3dc43`–`d9a1bdb3`，同时检查 host 与协议 |
-| [#2747](https://github.com/MoonshotAI/kimi-code/pull/2747) | `d7b649bc63bd` | permission glob 将 subject 视为不透明文本 | `89f41253`–`23f31e84`，增加 NUL 防护与回归测试 |
-| [#2761](https://github.com/MoonshotAI/kimi-code/pull/2761) | `2c5e7cd3ea6b` | `prompt_cache_key` 只发送给官方 OpenAI 端点 | `bb439132`–`2f01e4a2`，保留 changeset 与测试 |
-| [#2919](https://github.com/MoonshotAI/kimi-code/pull/2919) | `f7fa06bd76a0` | 清理前台 Bash 输出中的终端控制字符 | `c043312a`，与后台输出修复成组采用 |
-| [#2957](https://github.com/MoonshotAI/kimi-code/pull/2957) | `ba1a8bb32927` | 含 `&` 的 Bash 命令继续应用 cwd | `a83240b8`，适配 KKM 当前 argv runner |
-| [#3003](https://github.com/MoonshotAI/kimi-code/pull/3003) | `558b1a6f7103` | Anthropic profile 容忍缺失 model name | `53457f2c`，小型协议兼容修复 |
-| [#3207](https://github.com/MoonshotAI/kimi-code/pull/3207) | `a0fdafe1e06b` | Anthropic relay 缺少 text delta 时不崩溃 | `77867507`，带协议回归测试 |
-| [#3245](https://github.com/MoonshotAI/kimi-code/pull/3245) | `10cb09c0af6e` | 尾随反斜杠不再令 Bash 解析整体降级 | `c2e15463`，parser/lexer 小补丁与测试 |
-| [#3234](https://github.com/MoonshotAI/kimi-code/pull/3234) | `c7814b9966bd` | MCP 向模型发送 `content` 或 `structuredContent`，不重复发送 | `76d1bd56`–`c2f9c64a`，适配现有 stdio v2 测试路径 |
+| [#2445](https://github.com/MoonshotAI/kimi-code/pull/2445) | `a3d73c25c632` | 忽略终端状态回复，避免被当作用户输入 | `6b0efbe7`，终端层小补丁 |
+| [#2581](https://github.com/MoonshotAI/kimi-code/pull/2581) | `0877110261f8` | 完整身份 header 只发给 HTTPS 官方端点 | `bc4da03d`–`98dcaee6`，同时检查 host 与协议 |
+| [#2747](https://github.com/MoonshotAI/kimi-code/pull/2747) | `d7b649bc63bd` | permission glob 将 subject 视为不透明文本 | `b47365f3`–`6cbe923c`，增加 NUL 防护与回归测试 |
+| [#2761](https://github.com/MoonshotAI/kimi-code/pull/2761) | `2c5e7cd3ea6b` | `prompt_cache_key` 只发送给官方 OpenAI 端点 | `6aa21935`–`7e58266d`，保留 changeset 与测试 |
+| [#2919](https://github.com/MoonshotAI/kimi-code/pull/2919) | `f7fa06bd76a0` | 清理前台 Bash 输出中的终端控制字符 | `564d8830`，与后台输出修复成组采用 |
+| [#2957](https://github.com/MoonshotAI/kimi-code/pull/2957) | `ba1a8bb32927` | 含 `&` 的 Bash 命令继续应用 cwd | `c0bde947`，适配 KKM 当前 argv runner |
+| [#3003](https://github.com/MoonshotAI/kimi-code/pull/3003) | `558b1a6f7103` | Anthropic profile 容忍缺失 model name | `c9fd76ff`，小型协议兼容修复 |
+| [#3207](https://github.com/MoonshotAI/kimi-code/pull/3207) | `a0fdafe1e06b` | Anthropic relay 缺少 text delta 时不崩溃 | `3d45678d`，带协议回归测试 |
+| [#3245](https://github.com/MoonshotAI/kimi-code/pull/3245) | `10cb09c0af6e` | 尾随反斜杠不再令 Bash 解析整体降级 | `b0bf024d`，parser/lexer 小补丁与测试 |
+| [#3234](https://github.com/MoonshotAI/kimi-code/pull/3234) | `c7814b9966bd` | MCP 向模型发送 `content` 或 `structuredContent`，不重复发送 | `ca26323a`–`75c1ed27`，适配现有 stdio v2 测试路径 |
 
 ### 已评估但本批次不合并
 
