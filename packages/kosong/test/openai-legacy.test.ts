@@ -1253,9 +1253,7 @@ describe('OpenAILegacyChatProvider', () => {
       ];
       const body = await captureRequestBody(provider, '', [], history);
 
-      // Preserving the reasoning-only turn also activates the provider's
-      // default reasoning effort, matching other histories with ThinkPart.
-      expect(body['reasoning_effort']).toBe('medium');
+      expect(body['reasoning_effort']).toBeUndefined();
       expect(provider.thinkingEffort).toBe('off');
     });
 
@@ -1462,7 +1460,9 @@ describe('OpenAILegacyChatProvider', () => {
         },
         { role: 'user', content: 'Continue' },
       ]);
-      expect(body['reasoning_effort']).toBeUndefined();
+      // Preserving the reasoning-only turn also activates the provider's
+      // default reasoning effort, matching other histories with ThinkPart.
+      expect(body['reasoning_effort']).toBe('medium');
     });
 
     it('serializes ThinkPart back to reasoning_content even without reasoningKey', async () => {
