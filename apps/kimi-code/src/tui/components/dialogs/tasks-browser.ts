@@ -27,6 +27,7 @@ import type { BackgroundTaskInfo, BackgroundTaskStatus } from '@moonshot-ai/kimi
 import { SELECT_POINTER } from '@/tui/constant/symbols';
 import { currentTheme } from '#/tui/theme';
 import { printableChar } from '@/tui/utils/printable-key';
+import { sanitizeShellOutput } from '#/tui/utils/shell-output';
 
 const ELLIPSIS = '…';
 
@@ -595,7 +596,7 @@ export class TasksBrowserApp extends Container implements Focusable {
       body = `Preview unavailable: ${this.props.tailError} (press R to retry)`;
     else if (this.props.tailOutput === undefined || this.props.tailOutput.length === 0)
       body = '[no output captured]';
-    else body = this.props.tailOutput;
+    else body = sanitizeShellOutput(this.props.tailOutput);
 
     const rawLines = body.split('\n');
     const tailLines = rawLines.slice(-innerHeight);
